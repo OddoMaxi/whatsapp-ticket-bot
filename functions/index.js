@@ -1,20 +1,30 @@
 const express = require('express');
-const twilio = require('twilio');
+const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: false }));
+// Middleware pour parser les données reçues de Twilio
+app.use(bodyParser.urlencoded({ extended: false }));
 
+// Point d'entrée Webhook de Twilio
 app.post('/webhook', (req, res) => {
-  const twiml = new twilio.twiml.MessagingResponse();
-  twiml.message('Merci pour votre message !');
+  const msg = req.body.Body;
+  const from = req.body.From;
 
-  res.writeHead(200, { 'Content-Type': 'text/xml' });
-  res.end(twiml.toString());
+  console.log(`Message de ${from}: ${msg}`);
+
+  // Exemple de réponse automatisée
+  res.set('Content-Type', 'text/xml');
+  res.send(`
+    <Response>
+      <Message>Merci pour votre message !</Message>
+    </Response>
+  `);
 });
 
+// Lancement du serveur
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`✅ Bot WhatsApp actif sur le port ${port}`);
 });
