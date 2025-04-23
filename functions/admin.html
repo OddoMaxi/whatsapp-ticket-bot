@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin - Gestion des Événements</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; background: #f7f7f7; }
+    h1 { color: #333; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 2em; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #eee; }
+    tr:nth-child(even) { background: #fafafa; }
+    .cat-table { margin-top: 8px; }
+    .btn { padding: 4px 10px; margin: 2px; border: none; background: #1976d2; color: #fff; border-radius: 3px; cursor: pointer; }
+    .btn-danger { background: #d32f2f; }
+    .btn-secondary { background: #757575; }
+    .cat-row input { width: 90px; }
+    input, select { padding: 4px; margin: 2px; }
+    .form-section { background: #fff; padding: 1em; border-radius: 5px; box-shadow: 0 2px 6px #0001; margin-bottom: 2em; }
+  </style>
+</head>
+<body>
+  <h1>Gestion des Événements</h1>
+  <div class="form-section">
+    <h2 id="form-title">Ajouter un événement</h2>
+    <form id="event-form">
+      <input type="hidden" id="event-id">
+      <label>Nom : <input type="text" id="event-name" required></label><br>
+      <label>Date : <input type="datetime-local" id="event-date" required></label><br>
+      <label>Organisateur : <input type="text" id="event-organizer" required></label><br>
+      <label>Lieu : <input type="text" id="event-location" required></label><br>
+      <b>Catégories de tickets :</b>
+      <table class="cat-table" id="cat-table">
+        <thead><tr><th>Nom</th><th>Prix</th><th>Quantité</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button type="button" class="btn btn-secondary" onclick="addCatRow()">+ Ajouter une catégorie</button><br><br>
+      <button type="submit" class="btn">Enregistrer</button>
+      <button type="button" class="btn btn-secondary" onclick="resetForm()">Annuler</button>
+    </form>
+  </div>
+  <h2>Liste des événements</h2>
+  <table id="events-table">
+    <thead>
+      <tr>
+        <th>Nom</th><th>Date</th><th>Organisateur</th><th>Lieu</th><th>Catégories</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+<script>
+const api = '/admin/events';
+
+function fetchEvents() {
+  fetch(api).then(r => r.json()).then(events => {
+    const tbody = document.querySelector('#events-table tbody');
+    tbody.innerHTML = '';
+    events.forEach(ev => {
+      const cats = ev.categories.map(c => `${c.name} (${c.prix}F, ${c.quantite} places)`).join('<br>');
+      tbody.innerHTML += `<tr>
+        <td>${ev.name}</td>
+        <td>${new Date(ev.date).toLocaleString()}</td>
+        <td>${ev.organizer}</td>
+        <td>${ev.location}</td>
+        <td>${cats}</td>
+        <td>
+          <button class='btn' onclick='editEvent(${ev.id})'>Modifier</button>
+          <button class='btn btn-danger' onclick='deleteEvent(${ev.id})'>Supprimer</button>
+        </td>
+      </tr>`;
+    });
+  });
+}
+
+function addCatRow(cat = {}) {
+  const row = document.createElement('tr');
+  row.className = 'cat-row';
+  row.innerHTML = `
+    <td><input type="text" value="${cat.name || ''}" required></td>
+    <td><input type="number" min="0" value="${cat.prix || ''}" required></td>
+    <td><input type="number" min="1" value="${cat.quantite || ''}" required></td>
+    <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">X</button></td>
+  `;
+  document.querySelector('#cat-table tbody').appendChild(row);
+}
+
+function resetForm() {
+  document.getElementById('event-id').value = '';
+  document.getElementById('event-name').value = '';
+  document.getElementById('event-date').value = '';
+  document.getElementById('event-organizer').value = '';
+  document.getElementById('event-location').value = '';
+  document.querySelector('#cat-table tbody').innerHTML = '';
+  document.getElementById('form-title').innerText = 'Ajouter un événement';
+}
+
+function editEvent(id) {
+  fetch(api).then(r => r.json()).then(events => {
+    const ev = events.find(e => e.id == id);
+    if (!ev) return;
+    document.getElementById('event-id').value = ev.id;
+    document.getElementById('event-name').value = ev.name;
+    document.getElementById('event-date').value = ev.date.slice(0,16);
+    document.getElementById('event-organizer').value = ev.organizer;
+    document.getElementById('event-location').value = ev.location;
+    document.querySelector('#cat-table tbody').innerHTML = '';
+    (ev.categories||[]).forEach(addCatRow);
+    document.getElementById('form-title').innerText = 'Modifier un événement';
+    window.scrollTo(0,0);
+  });
+}
+
+function deleteEvent(id) {
+  if (!confirm('Supprimer cet événement ?')) return;
+  fetch(api + '/' + id, { method: 'DELETE' }).then(fetchEvents);
+}
+
+// Form submit
+ document.getElementById('event-form').onsubmit = function(e) {
+  e.preventDefault();
+  const id = document.getElementById('event-id').value;
+  const name = document.getElementById('event-name').value;
+  const date = document.getElementById('event-date').value;
+  const organizer = document.getElementById('event-organizer').value;
+  const location = document.getElementById('event-location').value;
+  const cats = Array.from(document.querySelectorAll('.cat-row')).map(row => {
+    const inputs = row.querySelectorAll('input');
+    return {
+      name: inputs[0].value,
+      prix: parseInt(inputs[1].value, 10),
+      quantite: parseInt(inputs[2].value, 10)
+    };
+  });
+  const event = { name, date, organizer, location, categories: cats };
+  if (id) {
+    fetch(api + '/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(event) })
+      .then(fetchEvents);
+  } else {
+    fetch(api, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(event) })
+      .then(fetchEvents);
+  }
+  resetForm();
+};
+
+fetchEvents();
+</script>
+</body>
+</html>

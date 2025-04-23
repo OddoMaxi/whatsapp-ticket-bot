@@ -1,0 +1,40 @@
+[
+  {
+    "id": 1,
+    "name": "Concert Example",
+    "date": "2025-06-01T20:00:00Z",
+    "organizer": "Prod Events",
+    "location": "Stade National",
+    "categories": [
+      {
+        "name": "VIP",
+        "price": 20000,
+        "quantity": 100
+      },
+      {
+        "name": "Standard",
+        "price": 10000,
+        "quantity": 500
+      }
+    ]
+  },
+  {
+    "name": "Concert Manamba Mousso",
+    "date": "2025-05-23T18:00",
+    "organizer": "Babata Music",
+    "location": "Chapiteau",
+    "categories": [
+      {
+        "name": "VIP",
+        "prix": 500000,
+        "quantite": 200
+      },
+      {
+        "name": "Standart",
+        "prix": 100000,
+        "quantite": 800
+      }
+    ],
+    "id": 1745440797188
+  }
+]

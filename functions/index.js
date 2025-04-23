@@ -1,19 +1,67 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const fs = require('fs');
+const path = require('path');
+const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Middleware pour parser les données reçues de Twilio
+// Middleware pour parser JSON, urlencoded, CORS
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.json());
+app.use(cors());
+app.use(express.static(__dirname));
 
-// --- Gestion d'un menu de vente de tickets ---
-const events = [
-  { id: 1, name: 'Concert' },
-  { id: 2, name: 'Théâtre' },
-  { id: 3, name: 'Conférence' }
-];
+// --- Gestion des événements (stockés dans events.json) ---
+const EVENTS_FILE = path.join(__dirname, 'events.json');
+
+function readEvents() {
+  try {
+    return JSON.parse(fs.readFileSync(EVENTS_FILE, 'utf8'));
+  } catch (e) {
+    return [];
+  }
+}
+function writeEvents(events) {
+  fs.writeFileSync(EVENTS_FILE, JSON.stringify(events, null, 2));
+}
+
+// --- API REST admin ---
+app.get('/admin/events', (req, res) => {
+  res.json(readEvents());
+});
+
+app.post('/admin/events', (req, res) => {
+  const events = readEvents();
+  const newEvent = req.body;
+  newEvent.id = Date.now();
+  events.push(newEvent);
+  writeEvents(events);
+  res.status(201).json(newEvent);
+});
+
+app.put('/admin/events/:id', (req, res) => {
+  const events = readEvents();
+  const idx = events.findIndex(e => e.id == req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  events[idx] = { ...events[idx], ...req.body, id: events[idx].id };
+  writeEvents(events);
+  res.json(events[idx]);
+});
+
+app.delete('/admin/events/:id', (req, res) => {
+  let events = readEvents();
+  const idx = events.findIndex(e => e.id == req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  const deleted = events.splice(idx, 1);
+  writeEvents(events);
+  res.json(deleted[0]);
+});
+
+// --- Gestion d'un menu de vente de tickets (WhatsApp) ---
+let events = readEvents();
 // Stockage temporaire de l'état des utilisateurs (par numéro)
 const userStates = {};
 
