@@ -168,7 +168,12 @@ app.post('/webhook', (req, res) => {
       // Afficher les catégories pour cet événement
       response = `Catégories disponibles pour "${event.name}" :\n`;
       event.categories.forEach((cat, idx) => {
-        response += `${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${cat.quantite || cat.quantity} places)\n`;
+        const dispo = (cat.quantite !== undefined ? cat.quantite : cat.quantity);
+        if (dispo < 1) {
+          response += `${idx+1}. ${cat.name} : Rupture de stock\n`;
+        } else {
+          response += `${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${dispo} places)\n`;
+        }
       });
       response += '\nRépondez par le numéro de la catégorie.';
     } else {
@@ -179,9 +184,14 @@ app.post('/webhook', (req, res) => {
     const cats = state.event.categories;
     const catIdx = parseInt(msg) - 1;
     if (cats && cats[catIdx]) {
-      state.category = cats[catIdx];
-      state.step = 'choose_quantity';
-      response = `Combien de tickets voulez-vous pour la catégorie "${state.category.name}" à ${state.category.prix || state.category.price}F l'unité ?`;
+      const dispo = (cats[catIdx].quantite !== undefined ? cats[catIdx].quantite : cats[catIdx].quantity);
+      if (dispo < 1) {
+        response = `Désolé, la catégorie "${cats[catIdx].name}" est en rupture de stock. Merci de choisir une autre catégorie.`;
+      } else {
+        state.category = cats[catIdx];
+        state.step = 'choose_quantity';
+        response = `Combien de tickets voulez-vous pour la catégorie "${state.category.name}" à ${state.category.prix || state.category.price}F l'unité ?`;
+      }
     } else {
       response = 'Numéro de catégorie invalide. Merci de réessayer.';
     }

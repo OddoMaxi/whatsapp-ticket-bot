@@ -30,7 +30,7 @@ function fetchDashboard() {
           <td>${cat.price} F</td>
           <td>${cat.total}</td>
           <td>${cat.sold}</td>
-          <td>${cat.left}</td>
+          <td>${cat.left < 1 ? '<span style=\'color:red;font-weight:bold\'>RUPTURE</span>' : cat.left}</td>
           <td>${cat.sales} F</td>
         </tr>`;
       });
