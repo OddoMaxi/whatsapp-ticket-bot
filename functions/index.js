@@ -1,18 +1,20 @@
-const functions = require("firebase-functions");
-const { MessagingResponse } = require("twilio").twiml;
+const express = require('express');
+const twilio = require('twilio');
+require('dotenv').config();
 
-exports.whatsappWebhook = functions.https.onRequest((req, res) => {
-  const msg = req.body.Body?.toLowerCase();
-  const twiml = new MessagingResponse();
+const app = express();
+const port = process.env.PORT || 3000;
 
-  if (msg === "1") {
-    twiml.message("🎉 Événements à venir :\n1. Grand Mory\n2. AfroMix\n3. StartUp 2025");
-  } else if (msg === "2") {
-    twiml.message("Combien de tickets veux-tu pour AfroMix ?");
-  } else {
-    twiml.message("👋 Salut ! Tape 1 pour voir les événements disponibles.");
-  }
+app.use(express.urlencoded({ extended: false }));
 
-  res.set("Content-Type", "text/xml");
-  res.status(200).send(twiml.toString());
+app.post('/webhook', (req, res) => {
+  const twiml = new twilio.twiml.MessagingResponse();
+  twiml.message('Merci pour votre message !');
+
+  res.writeHead(200, { 'Content-Type': 'text/xml' });
+  res.end(twiml.toString());
+});
+
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
