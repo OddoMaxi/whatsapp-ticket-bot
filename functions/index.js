@@ -26,8 +26,58 @@ db.exec(`CREATE TABLE IF NOT EXISTS events (
   location TEXT NOT NULL,
   categories TEXT NOT NULL
 )`);
+db.exec(`CREATE TABLE IF NOT EXISTS reservations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user TEXT NOT NULL,
+  event_id INTEGER NOT NULL,
+  event_name TEXT NOT NULL,
+  category_name TEXT NOT NULL,
+  quantity INTEGER NOT NULL,
+  unit_price INTEGER NOT NULL,
+  total_price INTEGER NOT NULL,
+  date TEXT NOT NULL
+)`);
 
 // --- API REST admin ---
+
+// Liste des réservations
+app.get('/admin/reservations', (req, res) => {
+  const rows = db.prepare('SELECT * FROM reservations ORDER BY date DESC').all();
+  res.json(rows);
+});
+
+// Tableau de bord tickets
+app.get('/admin/dashboard', (req, res) => {
+  // Pour chaque événement et catégorie : tickets vendus, restants, total ventes
+  const events = db.prepare('SELECT * FROM events').all().map(ev => ({ ...ev, categories: JSON.parse(ev.categories) }));
+  const reservations = db.prepare('SELECT * FROM reservations').all();
+  const dashboard = events.map(ev => {
+    const cats = ev.categories.map(cat => {
+      // Tickets vendus pour cette catégorie
+      const sold = reservations.filter(r => r.event_id === ev.id && r.category_name === cat.name)
+        .reduce((sum, r) => sum + r.quantity, 0);
+      const total = cat.quantite !== undefined ? (cat.quantite + sold) : (cat.quantity !== undefined ? (cat.quantity + sold) : 0);
+      const left = total - sold;
+      const sales = reservations.filter(r => r.event_id === ev.id && r.category_name === cat.name)
+        .reduce((sum, r) => sum + r.total_price, 0);
+      return {
+        name: cat.name,
+        price: cat.prix || cat.price,
+        total,
+        sold,
+        left,
+        sales
+      };
+    });
+    return {
+      event_id: ev.id,
+      event_name: ev.name,
+      categories: cats
+    };
+  });
+  res.json(dashboard);
+});
+
 app.get('/admin/events', (req, res) => {
   const rows = db.prepare('SELECT * FROM events').all();
   const events = rows.map(ev => ({ ...ev, categories: JSON.parse(ev.categories) }));
@@ -140,9 +190,37 @@ app.post('/webhook', (req, res) => {
       response = 'Merci d\'indiquer un nombre valide.';
     }
   } else if (state.step === 'confirm' && /^oui$/i.test(msg)) {
-    // Confirmation
-    response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${state.event.name}" est prise en compte.\nTapez "menu" pour recommencer.`;
-    userStates[from] = { step: 'init' };
+    // Confirmation : vérifie stock, décrémente, enregistre
+    const event = db.prepare('SELECT * FROM events WHERE id=?').get(state.event.id);
+    if (!event) {
+      response = 'Erreur : événement introuvable.';
+      userStates[from] = { step: 'init' };
+    } else {
+      let cats = JSON.parse(event.categories);
+      let catIdx = cats.findIndex(c => c.name === state.category.name);
+      let cat = cats[catIdx];
+      if (!cat) {
+        response = 'Erreur : catégorie introuvable.';
+        userStates[from] = { step: 'init' };
+      } else if ((cat.quantite || cat.quantity) < state.quantity) {
+        response = `Désolé, il ne reste que ${cat.quantite || cat.quantity} places pour cette catégorie.`;
+        // On reste à l'étape de quantité
+      } else {
+        // Décrémente le stock
+        cat.quantite = (cat.quantite || cat.quantity) - state.quantity;
+        cats[catIdx] = cat;
+        db.prepare('UPDATE events SET categories=? WHERE id=?').run(JSON.stringify(cats), event.id);
+        // Enregistre la réservation
+        const prix = cat.prix || cat.price;
+        const total = prix * state.quantity;
+        db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+            from, event.id, event.name, cat.name, state.quantity, prix, total
+        );
+        response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nTotal payé : ${total}F.\nTapez "menu" pour recommencer.`;
+        userStates[from] = { step: 'init' };
+      }
+    }
   } else {
     // Message par défaut
     response = 'Bienvenue sur le bot de vente de tickets ! Tapez "menu" pour commencer.';

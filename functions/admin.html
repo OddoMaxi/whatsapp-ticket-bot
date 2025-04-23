@@ -49,6 +49,26 @@
     <tbody></tbody>
   </table>
 
+<h2>Liste des réservations</h2>
+<table id="reservations-table">
+  <thead>
+    <tr>
+      <th>Utilisateur</th><th>Événement</th><th>Catégorie</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th><th>Date</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h2>Tableau de bord des tickets</h2>
+<table id="dashboard-table">
+  <thead>
+    <tr>
+      <th>Événement</th><th>Catégorie</th><th>Prix</th><th>Stock initial</th><th>Vendus</th><th>Restants</th><th>Ventes totales</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
 <script>
 const api = '/admin/events';
 
@@ -145,5 +165,6 @@ function deleteEvent(id) {
 
 fetchEvents();
 </script>
+<script src="dashboard.js"></script>
 </body>
 </html>
