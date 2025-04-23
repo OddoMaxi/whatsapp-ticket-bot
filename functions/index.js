@@ -4,6 +4,9 @@ const path = require('path');
 const cors = require('cors');
 const Database = require('better-sqlite3');
 require('dotenv').config();
+const QRCode = require('qrcode');
+const Jimp = require('jimp');
+const twilio = require('twilio');
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -13,6 +16,14 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
 app.use(cors());
 app.use(express.static(__dirname));
+
+// Sert les tickets générés dans /tmp pour Twilio
+app.get('/ticket_:id.png', (req, res) => {
+  const filePath = `/tmp/ticket_${req.params.id}.png`;
+  res.sendFile(filePath, err => {
+    if (err) res.status(404).send('Ticket introuvable');
+  });
+});
 
 // --- Gestion des événements avec SQLite ---
 const DB_FILE = process.env.DB_FILE || path.join('/tmp', 'events.db');
@@ -26,6 +37,39 @@ process.on('unhandledRejection', err => {
   console.error('Unhandled Rejection:', err);
 });
 db.pragma('journal_mode = WAL');
+
+// --- Génération et envoi du ticket image avec QR Code ---
+async function generateAndSendTicket({ to, eventName, category, reservationId }) {
+  try {
+    // 1. Générer le QR code (avec l'ID réservation)
+    const qrValue = JSON.stringify({ reservationId, eventName, category });
+    const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 200 });
+    // 2. Créer une image ticket avec Jimp
+    const width = 500, height = 300;
+    const image = new Jimp(width, height, 0xffffffff); // fond blanc
+    const font = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
+    image.print(font, 20, 30, `Evénement : ${eventName}`);
+    image.print(font, 20, 90, `Catégorie : ${category}`);
+    // Insérer le QR code
+    const qrImg = await Jimp.read(qrBuffer);
+    image.composite(qrImg.resize(160, 160), width - 180, height - 180);
+    // 3. Sauver temporairement
+    const filePath = `/tmp/ticket_${reservationId}.png`;
+    await image.writeAsync(filePath);
+    // 4. Envoyer via Twilio WhatsApp
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    await client.messages.create({
+      from: 'whatsapp:' + process.env.TWILIO_WHATSAPP_NUMBER,
+      to: to,
+      body: `Voici votre ticket pour "${eventName}" (${category}) :`,
+      mediaUrl: [`https://${process.env.HOSTNAME || 'your-domain'}/ticket_${reservationId}.png`]
+    });
+    // 5. Optionnel : tu pourrais supprimer le fichier après envoi
+  } catch (err) {
+    console.error('Erreur génération/envoi ticket:', err);
+  }
+}
+
 db.exec(`CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -231,11 +275,18 @@ app.post('/webhook', (req, res) => {
         // Enregistre la réservation
         const prix = cat.prix || cat.price;
         const total = prix * state.quantity;
-        db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+        const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
             from, event.id, event.name, cat.name, state.quantity, prix, total
         );
-        response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nTotal payé : ${total}F.\nTapez "menu" pour recommencer.`;
+        // Générer et envoyer le ticket image avec QR code
+        generateAndSendTicket({
+          to: from,
+          eventName: event.name,
+          category: cat.name,
+          reservationId: rsvInfo.lastInsertRowid
+        });
+        response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé par WhatsApp.\nTapez "menu" pour recommencer.`;
         userStates[from] = { step: 'init' };
       }
     }
