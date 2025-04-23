@@ -212,25 +212,33 @@ app.post('/webhook', (req, res) => {
       response += '\nRépondez par le numéro de l\'événement.';
     }
   } else if (state.step === 'choose_event' && /^\d+$/.test(msg)) {
-    // Choix de l'événement par ID dynamique
-    const event = events.find(ev => ev.id == parseInt(msg));
-    if (event) {
-      state.event = event;
-      state.step = 'choose_category';
-      // Afficher les catégories pour cet événement
-      response = `Catégories disponibles pour "${event.name}" :\n`;
-      event.categories.forEach((cat, idx) => {
-        const dispo = (cat.quantite !== undefined ? cat.quantite : cat.quantity);
-        if (dispo < 1) {
-          response += `${idx+1}. ${cat.name} : Rupture de stock\n`;
-        } else {
-          response += `${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${dispo} places)\n`;
-        }
-      });
-      response += '\nRépondez par le numéro de la catégorie.';
-    } else {
-      response = 'Numéro d\'événement invalide. Merci de réessayer.';
+    try {
+      // Choix de l'événement par ID dynamique
+      const event = events.find(ev => ev.id == parseInt(msg));
+      console.log('Choix event:', event); // Debug
+      if (event) {
+        state.event = event;
+        state.step = 'choose_category';
+        // Afficher les catégories pour cet événement
+        response = `Catégories disponibles pour "${event.name}" :\n`;
+        event.categories.forEach((cat, idx) => {
+          const dispo = (cat.quantite !== undefined ? cat.quantite : cat.quantity);
+          if (dispo < 1) {
+            response += `${idx+1}. ${cat.name} : Rupture de stock\n`;
+          } else {
+            response += `${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${dispo} places)\n`;
+          }
+        });
+        response += '\nRépondez par le numéro de la catégorie.';
+      } else {
+        response = 'Numéro d\'événement invalide. Merci de réessayer.';
+      }
+    } catch (e) {
+      console.error("Erreur lors du choix d'événement:", e);
+      response = "Erreur interne lors du choix de l'événement. Merci de réessayer ou contacter l'admin.";
+      userStates[from] = { step: 'init' };
     }
+  
   } else if (state.step === 'choose_category' && /^\d+$/.test(msg)) {
     // Choix de la catégorie par numéro
     const cats = state.event.categories;
