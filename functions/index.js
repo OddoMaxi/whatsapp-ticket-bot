@@ -15,8 +15,16 @@ app.use(cors());
 app.use(express.static(__dirname));
 
 // --- Gestion des événements avec SQLite ---
-const DB_FILE = path.join(__dirname, 'events.db');
+const DB_FILE = process.env.DB_FILE || path.join('/tmp', 'events.db');
 const db = new Database(DB_FILE);
+
+// Log global pour erreurs non gérées
+process.on('uncaughtException', err => {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', err => {
+  console.error('Unhandled Rejection:', err);
+});
 db.pragma('journal_mode = WAL');
 db.exec(`CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
