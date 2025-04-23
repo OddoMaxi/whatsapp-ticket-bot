@@ -43,19 +43,26 @@ async function generateAndSendTicket({ to, eventName, category, reservationId })
   try {
     // 1. Générer le QR code (avec l'ID réservation)
     const qrValue = JSON.stringify({ reservationId, eventName, category });
-    const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 200 });
-    // 2. Créer une image ticket avec Jimp
-    const width = 500, height = 300;
+    const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 120 });
+    // 2. Créer une image ticket compacte avec Jimp (320x180)
+    const width = 320, height = 180;
     const image = new Jimp(width, height, 0xffffffff); // fond blanc
-    const font = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
-    image.print(font, 20, 30, `Evénement : ${eventName}`);
-    image.print(font, 20, 90, `Catégorie : ${category}`);
-    // Insérer le QR code
+    const font = await Jimp.loadFont(Jimp.FONT_SANS_16_BLACK);
+    image.print(font, 10, 15, `Evénement : ${eventName}`);
+    image.print(font, 10, 45, `Catégorie : ${category}`);
+    // Insérer le QR code plus petit
     const qrImg = await Jimp.read(qrBuffer);
-    image.composite(qrImg.resize(160, 160), width - 180, height - 180);
-    // 3. Sauver temporairement
+    image.composite(qrImg.resize(90, 90), width - 100, height - 100);
+    // 3. Sauver temporairement avec compression
     const filePath = `/tmp/ticket_${reservationId}.png`;
-    await image.writeAsync(filePath);
+    await image.quality(70).writeAsync(filePath);
+    // Vérifier la taille et réduire si besoin
+    const fs = require('fs');
+    let stats = fs.statSync(filePath);
+    if (stats.size > 50000) {
+      // Dernier recours : resize plus petit si > 50ko
+      await image.resize(240, 135).quality(60).writeAsync(filePath);
+    }
     // 4. Envoyer via Twilio WhatsApp
     const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
     await client.messages.create({
@@ -69,6 +76,7 @@ async function generateAndSendTicket({ to, eventName, category, reservationId })
     console.error('Erreur génération/envoi ticket:', err);
   }
 }
+
 
 db.exec(`CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,13 +288,13 @@ app.post('/webhook', (req, res) => {
             from, event.id, event.name, cat.name, state.quantity, prix, total
         );
         // Générer et envoyer le ticket image avec QR code
-        generateAndSendTicket({
+        setTimeout(() => generateAndSendTicket({
           to: from,
           eventName: event.name,
           category: cat.name,
           reservationId: rsvInfo.lastInsertRowid
-        });
-        response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé par WhatsApp.\nTapez "menu" pour recommencer.`;
+        }), 0);
+        response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par WhatsApp.\nTapez "menu" pour recommencer.`;
         userStates[from] = { step: 'init' };
       }
     }
