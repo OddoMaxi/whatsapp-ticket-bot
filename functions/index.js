@@ -1,8 +1,8 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
+const Database = require('better-sqlite3');
 require('dotenv').config();
 
 const app = express();
@@ -14,54 +14,58 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- Gestion des événements (stockés dans events.json) ---
-const EVENTS_FILE = path.join(__dirname, 'events.json');
-
-function readEvents() {
-  try {
-    return JSON.parse(fs.readFileSync(EVENTS_FILE, 'utf8'));
-  } catch (e) {
-    return [];
-  }
-}
-function writeEvents(events) {
-  fs.writeFileSync(EVENTS_FILE, JSON.stringify(events, null, 2));
-}
+// --- Gestion des événements avec SQLite ---
+const DB_FILE = path.join(__dirname, 'events.db');
+const db = new Database(DB_FILE);
+db.pragma('journal_mode = WAL');
+db.exec(`CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  date TEXT NOT NULL,
+  organizer TEXT NOT NULL,
+  location TEXT NOT NULL,
+  categories TEXT NOT NULL
+)`);
 
 // --- API REST admin ---
 app.get('/admin/events', (req, res) => {
-  res.json(readEvents());
+  const rows = db.prepare('SELECT * FROM events').all();
+  const events = rows.map(ev => ({ ...ev, categories: JSON.parse(ev.categories) }));
+  res.json(events);
 });
 
 app.post('/admin/events', (req, res) => {
-  const events = readEvents();
-  const newEvent = req.body;
-  newEvent.id = Date.now();
-  events.push(newEvent);
-  writeEvents(events);
-  res.status(201).json(newEvent);
+  const { name, date, organizer, location, categories } = req.body;
+  const stmt = db.prepare('INSERT INTO events (name, date, organizer, location, categories) VALUES (?, ?, ?, ?, ?)');
+  const info = stmt.run(name, date, organizer, location, JSON.stringify(categories));
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid);
+  event.categories = JSON.parse(event.categories);
+  res.status(201).json(event);
 });
 
 app.put('/admin/events/:id', (req, res) => {
-  const events = readEvents();
-  const idx = events.findIndex(e => e.id == req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Not found' });
-  events[idx] = { ...events[idx], ...req.body, id: events[idx].id };
-  writeEvents(events);
-  res.json(events[idx]);
+  const { name, date, organizer, location, categories } = req.body;
+  const stmt = db.prepare('UPDATE events SET name=?, date=?, organizer=?, location=?, categories=? WHERE id=?');
+  const info = stmt.run(name, date, organizer, location, JSON.stringify(categories), req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
+  const event = db.prepare('SELECT * FROM events WHERE id=?').get(req.params.id);
+  event.categories = JSON.parse(event.categories);
+  res.json(event);
 });
 
 app.delete('/admin/events/:id', (req, res) => {
-  let events = readEvents();
-  const idx = events.findIndex(e => e.id == req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Not found' });
-  const deleted = events.splice(idx, 1);
-  writeEvents(events);
-  res.json(deleted[0]);
+  const event = db.prepare('SELECT * FROM events WHERE id=?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM events WHERE id=?').run(req.params.id);
+  event.categories = JSON.parse(event.categories);
+  res.json(event);
 });
 
 // --- Gestion d'un menu de vente de tickets (WhatsApp) ---
-let events = readEvents();
+function getEventsForBot() {
+  return db.prepare('SELECT * FROM events').all().map(ev => ({ ...ev, categories: JSON.parse(ev.categories) }));
+}
+
 // Stockage temporaire de l'état des utilisateurs (par numéro)
 const userStates = {};
 
@@ -80,31 +84,58 @@ app.post('/webhook', (req, res) => {
   console.log(`Message de ${from}: ${msg}`);
 
   // Logique du menu
+  const events = getEventsForBot();
   if (/^menu$/i.test(msg)) {
-    // Afficher le menu des événements
-    state.step = 'choose_event';
-    response = 'Bienvenue ! Quel événement vous intéresse ?\n';
-    events.forEach(ev => {
-      response += `${ev.id}. ${ev.name}\n`;
-    });
-    response += '\nRépondez par le numéro de l\'événement.';
-  } else if (state.step === 'choose_event' && /^[1-3]$/.test(msg)) {
-    // Choix de l'événement
-    const event = events.find(ev => ev.id === parseInt(msg));
+    // Afficher le menu des événements dynamiquement
+    if (!events.length) {
+      response = 'Aucun événement disponible pour le moment.';
+      state.step = 'init';
+    } else {
+      state.step = 'choose_event';
+      response = 'Bienvenue ! Quel événement vous intéresse ?\n';
+      events.forEach(ev => {
+        response += `${ev.id}. ${ev.name}\n`;
+        ev.categories.forEach((cat, idx) => {
+          response += `   - ${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${cat.quantite || cat.quantity} places)\n`;
+        });
+      });
+      response += '\nRépondez par le numéro de l\'événement.';
+    }
+  } else if (state.step === 'choose_event' && /^\d+$/.test(msg)) {
+    // Choix de l'événement par ID dynamique
+    const event = events.find(ev => ev.id == parseInt(msg));
     if (event) {
       state.event = event;
-      state.step = 'choose_quantity';
-      response = `Combien de tickets voulez-vous pour "${event.name}" ?`;
+      state.step = 'choose_category';
+      // Afficher les catégories pour cet événement
+      response = `Catégories disponibles pour "${event.name}" :\n`;
+      event.categories.forEach((cat, idx) => {
+        response += `${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${cat.quantite || cat.quantity} places)\n`;
+      });
+      response += '\nRépondez par le numéro de la catégorie.';
     } else {
       response = 'Numéro d\'événement invalide. Merci de réessayer.';
+    }
+  } else if (state.step === 'choose_category' && /^\d+$/.test(msg)) {
+    // Choix de la catégorie par numéro
+    const cats = state.event.categories;
+    const catIdx = parseInt(msg) - 1;
+    if (cats && cats[catIdx]) {
+      state.category = cats[catIdx];
+      state.step = 'choose_quantity';
+      response = `Combien de tickets voulez-vous pour la catégorie "${state.category.name}" à ${state.category.prix || state.category.price}F l'unité ?`;
+    } else {
+      response = 'Numéro de catégorie invalide. Merci de réessayer.';
     }
   } else if (state.step === 'choose_quantity' && /^\d+$/.test(msg)) {
     // Choix du nombre de tickets
     const quantity = parseInt(msg);
-    if (quantity > 0) {
+    if (quantity > 0 && state.category) {
       state.quantity = quantity;
       state.step = 'confirm';
-      response = `Vous avez choisi ${quantity} ticket(s) pour "${state.event.name}".\nRépondez "oui" pour confirmer ou "menu" pour recommencer.`;
+      const prix = state.category.prix || state.category.price;
+      const total = prix * quantity;
+      response = `Vous avez choisi ${quantity} ticket(s) pour "${state.event.name}" en catégorie "${state.category.name}" (${prix}F l'unité).\nTotal à payer : ${total}F.\nRépondez "oui" pour confirmer ou "menu" pour recommencer.`;
     } else {
       response = 'Merci d\'indiquer un nombre valide.';
     }
