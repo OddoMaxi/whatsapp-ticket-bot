@@ -5,11 +5,8 @@ const cors = require('cors');
 const Database = require('better-sqlite3');
 require('dotenv').config();
 const QRCode = require('qrcode');
-let Jimp = require('jimp');
-if (Jimp && typeof Jimp !== 'function' && typeof Jimp.default === 'function') {
-  Jimp = Jimp.default;
-}
-console.log('[DEBUG] Jimp final:', typeof Jimp, Jimp);
+const JimpModule = require('jimp');
+const Jimp = JimpModule.Jimp || JimpModule;
 const TelegramBot = require('node-telegram-bot-api');
 
 // Initialisation du bot Telegram (mode polling OFF, on envoie seulement)
