@@ -5,7 +5,11 @@ const cors = require('cors');
 const Database = require('better-sqlite3');
 require('dotenv').config();
 const QRCode = require('qrcode');
-const Jimp = require('jimp').default || require('jimp'); // compatibilité CommonJS/ESM
+const Jimp = require('jimp').default;
+if (typeof Jimp !== 'function') {
+  console.error('[FATAL] Jimp is not a constructor. Value:', Jimp);
+  throw new Error('Jimp is not a constructor. Vérifiez la version de jimp ou l\'import.');
+}
 const TelegramBot = require('node-telegram-bot-api');
 
 // Initialisation du bot Telegram (mode polling OFF, on envoie seulement)
