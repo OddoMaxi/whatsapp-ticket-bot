@@ -101,8 +101,8 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     // Charge ce buffer PNG dans Jimp
     const image = await Jimp.read(buffer); // fond blanc
 
-    // 3. Charger une police et écrire les infos sur le ticket (Railway/@jimp/core)
-    const font = await image.getFont(Jimp.FONT_SANS_16_BLACK);
+    // 3. Charger une police et écrire les infos sur le ticket (statique, compatible Jimp/@jimp/core)
+    const font = await Jimp.loadFont(Jimp.FONT_SANS_16_BLACK);
     image.print(font, 10, 15, `Evénement : ${eventName}`);
     image.print(font, 10, 45, `Catégorie : ${category}`);
 
