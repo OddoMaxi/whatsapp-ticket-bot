@@ -5,7 +5,7 @@ const cors = require('cors');
 const Database = require('better-sqlite3');
 require('dotenv').config();
 const QRCode = require('qrcode');
-const Jimp = require('jimp');
+const Jimp = require('jimp').default || require('jimp'); // compatibilité CommonJS/ESM
 const TelegramBot = require('node-telegram-bot-api');
 
 // Initialisation du bot Telegram (mode polling OFF, on envoie seulement)
@@ -29,7 +29,11 @@ app.get('/ticket_:id.png', (req, res) => {
 });
 
 // --- Gestion des événements avec SQLite ---
-const DB_FILE = process.env.DB_FILE || path.join('/tmp', 'events.db');
+const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data', 'events.db');
+const fs = require('fs');
+if (!fs.existsSync(path.dirname(DB_FILE))) {
+  fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+}
 const db = new Database(DB_FILE);
 
 // Log global pour erreurs non gérées
