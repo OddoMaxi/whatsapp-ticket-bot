@@ -15,7 +15,10 @@ const QRCode = require('qrcode');
 
 // Remplacement de Jimp par canvas (node-canvas) pour la génération de tickets compatible Railway
 // Voir doc : https://www.npmjs.com/package/canvas
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage, registerFont } = require('canvas');
+const path = require('path');
+// Enregistrement de la police custom Open Sans (embarqué dans le repo)
+registerFont(path.join(__dirname, 'fonts/OpenSans-Regular.ttf'), { family: 'Open Sans' });
 
 // PNGJS pour éventuels usages (QR, etc)
 const { PNG } = require('pngjs');
@@ -92,9 +95,9 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, width, height);
 
-    // 3. Ecrire les infos sur le ticket (texte)
+    // 3. Ecrire les infos sur le ticket (texte, police custom Open Sans)
     ctx.fillStyle = '#000';
-    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.font = 'bold 16px "Open Sans"';
     ctx.fillText(`Evénement : ${eventName}`, 10, 30);
     ctx.fillText(`Catégorie : ${category}`, 10, 60);
 
