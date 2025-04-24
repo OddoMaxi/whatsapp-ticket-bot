@@ -82,14 +82,15 @@ process.on('unhandledRejection', err => {
 // =============================
 // Utilisé pour WhatsApp ET Telegram
 // Paramètres : to = userId, channel = 'telegram' ou 'whatsapp', eventName, category, reservationId
-async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, category, reservationId }) {
+// Ajout du paramètre price (prix du ticket)
+async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, category, reservationId, price }) {
   try {
     // 1. Générer le QR code (avec l'ID réservation, encodé en JSON)
     const qrValue = JSON.stringify({ reservationId, eventName, category });
     const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 120 });
 
-    // 2. Créer une image ticket blanche compacte (320x180) avec canvas
-    const width = 320, height = 180;
+    // 2. Créer une image ticket verticale (300x400) avec canvas
+    const width = 300, height = 400;
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
@@ -97,16 +98,48 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, width, height);
 
-    // 3. Ecrire les infos sur le ticket (texte, police custom Open Sans)
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 16px "Open Sans"';
-    ctx.fillText(`Evénement : ${eventName}`, 10, 30);
-    ctx.fillText(`Catégorie : ${category}`, 10, 60);
+    // Charger et dessiner le logo KISSAN centré en haut
+    const logoPath = path.join(__dirname, 'assets', 'kissan-logo.png');
+    let logoHeight = 0;
+    try {
+      const logoImg = await loadImage(logoPath);
+      const logoWidth = 110;
+      logoHeight = (logoImg.height / logoImg.width) * logoWidth;
+      ctx.drawImage(logoImg, (width - logoWidth) / 2, 18, logoWidth, logoHeight);
+    } catch (e) {
+      // Si le logo n'est pas trouvé, ignorer
+      console.warn('Logo KISSAN non trouvé ou erreur de chargement:', e);
+      logoHeight = 50;
+    }
 
-    // 4. Insérer le QR code (redimensionné)
-    // On charge le buffer QR comme image
+    // Y de base après le logo
+    let y = 18 + logoHeight + 16;
+
+    // Centrer tous les textes
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 22px "Open Sans"';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${eventName}`, width / 2, y);
+    y += 38;
+    ctx.font = '17px "Open Sans"';
+    ctx.fillText(`Catégorie : ${category}`, width / 2, y);
+    y += 26;
+    ctx.font = '16px "Open Sans"';
+    if (typeof price !== 'undefined') {
+      ctx.fillText(`Prix : ${price} F`, width / 2, y);
+      y += 24;
+    }
+    ctx.fillText(`ID Réservation : ${reservationId}`, width / 2, y);
+
+    // Centrer le QR code (plus grand, au milieu du ticket)
     const qrImg = await loadImage(qrBuffer);
-    ctx.drawImage(qrImg, width - 100, height - 100, 90, 90);
+    const qrSize = 140;
+    ctx.drawImage(qrImg, (width - qrSize) / 2, height / 2 + 10, qrSize, qrSize);
+
+    // Optionnel : texte sous le QR
+    ctx.font = 'italic 14px "Open Sans"';
+    ctx.fillStyle = '#444';
+    ctx.fillText('Présentez ce ticket à l’entrée', width / 2, height - 18);
 
     // 5. Sauver temporairement le ticket avec compression (pour WhatsApp/Telegram)
     const filePath = `/tmp/ticket_${reservationId}.png`;
