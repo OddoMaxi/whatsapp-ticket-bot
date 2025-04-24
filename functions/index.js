@@ -16,7 +16,6 @@ const QRCode = require('qrcode');
 // Remplacement de Jimp par canvas (node-canvas) pour la génération de tickets compatible Railway
 // Voir doc : https://www.npmjs.com/package/canvas
 const { createCanvas, loadImage, registerFont } = require('canvas');
-const path = require('path');
 // Enregistrement de la police custom Open Sans (embarqué dans le repo)
 registerFont(path.join(__dirname, 'fonts/OpenSans-Regular.ttf'), { family: 'Open Sans' });
 
