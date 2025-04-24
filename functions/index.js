@@ -87,7 +87,8 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
   try {
     // 1. Générer le QR code (avec l'ID réservation, encodé en JSON)
     const qrValue = JSON.stringify({ reservationId, eventName, category });
-    const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 120 });
+    // Générer le QR code en haute résolution pour plus de netteté
+    const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 400 });
 
     // 2. Créer une image ticket verticale (300x400) avec canvas
     const width = 300, height = 400;
@@ -99,7 +100,8 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     ctx.fillRect(0, 0, width, height);
 
     // Charger et dessiner le logo KISSAN centré en haut
-    const logoPath = path.join(__dirname, 'assets', 'kissan-logo.png');
+    // Utilise un chemin absolu compatible avec Canvas sous Node.js
+    const logoPath = path.resolve(__dirname, 'assets', 'kissan-logo.png');
     let logoHeight = 0;
     try {
       const logoImg = await loadImage(logoPath);
@@ -140,6 +142,23 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     ctx.font = 'italic 14px "Open Sans"';
     ctx.fillStyle = '#444';
     ctx.fillText('Présentez ce ticket à l’entrée', width / 2, height - 18);
+
+    // Ajout des instructions légales et d'usage en tout petit, en bas du ticket
+    ctx.font = '10px "Open Sans"';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    const legalLines = [
+      'Ce ticket est personnel et non transférable.',
+      'Veuillez présenter ce ticket (imprimé ou sur smartphone) à l’entrée de l’événement.',
+      'Le QR code sera scanné à l’arrivée pour valider l’accès.',
+      '⚠️ Un seul scan est autorisé par ticket.',
+      'Toute reproduction ou duplication est strictement interdite.'
+    ];
+    let legalY = height - 48;
+    for (const line of legalLines) {
+      ctx.fillText(line, width / 2, legalY);
+      legalY += 11;
+    }
 
     // 5. Sauver temporairement le ticket avec compression (pour WhatsApp/Telegram)
     const filePath = `/tmp/ticket_${reservationId}.png`;
