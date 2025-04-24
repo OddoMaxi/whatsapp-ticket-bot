@@ -452,14 +452,25 @@ app.post('/webhook', (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`)
             .run(from, event.id, event.name, cat.name, 1, prix, prix, formattedId, qrCode);
           // Générer et envoyer le ticket image avec QR code
-          setTimeout(() => generateAndSendTicket({
-            to: from,
-            eventName: event.name,
-            category: cat.name,
-            reservationId: rsvInfo.lastInsertRowid,
-            formattedId,
-            qrCode
-          }), 0);
+          setTimeout(() => {
+            try {
+              if (catIdx === undefined || formattedId === undefined || qrCode === undefined) {
+                console.error('Paramètre manquant (WhatsApp):', {catIdx, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid});
+              }
+              generateAndSendTicket({
+                to: from,
+                eventName: event.name,
+                category: cat.name,
+                reservationId: rsvInfo.lastInsertRowid,
+                formattedId,
+                qrCode
+              });
+            } catch (err) {
+              console.error('Erreur lors de l’appel à generateAndSendTicket (WhatsApp):', {
+                catIdx, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid, err
+              });
+            }
+          }, 0);
         }
         response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par WhatsApp.\nTapez "menu" pour recommencer.`;
         userStates[userKey] = { step: 'init' };
@@ -621,15 +632,26 @@ telegramBot.on('message', async (msg) => {
           qrCode = String(Math.floor(1000000 + Math.random() * 9000000));
         } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
         db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
-        setTimeout(() => generateAndSendTicket({
-          to: userId,
-          channel: 'telegram',
-          eventName: event.name,
-          category: cat.name,
-          reservationId: rsvInfo.lastInsertRowid,
-          formattedId,
-          qrCode
-        }), 0);
+        setTimeout(() => {
+          try {
+            if (catIdx === undefined || formattedId === undefined || qrCode === undefined) {
+              console.error('Paramètre manquant (Telegram):', {catIdx, formattedId, qrCode, userId, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid});
+            }
+            generateAndSendTicket({
+              to: userId,
+              channel: 'telegram',
+              eventName: event.name,
+              category: cat.name,
+              reservationId: rsvInfo.lastInsertRowid,
+              formattedId,
+              qrCode
+            });
+          } catch (err) {
+            console.error('Erreur lors de l’appel à generateAndSendTicket (Telegram):', {
+              catIdx, formattedId, qrCode, userId, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid, err
+            });
+          }
+        }, 0);
       }
       response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par Telegram.\nTapez "menu" pour recommencer.`;
       userStates[userKey] = { step: 'init' };
