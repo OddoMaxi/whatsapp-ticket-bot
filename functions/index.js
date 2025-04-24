@@ -18,6 +18,14 @@ const QRCode = require('qrcode');
 const JimpModule = require('jimp');
 const Jimp = JimpModule.Jimp || JimpModule; // Patch universel pour toutes versions
 
+// Ajout dynamique du plugin print pour Railway/@jimp/core (gestion du texte)
+try {
+  require('@jimp/plugin-print').default(Jimp);
+} catch (e) {
+  console.warn('Jimp print plugin non chargé:', e.message);
+}
+
+
 // PNGJS pour créer une image PNG blanche compatible Jimp/@jimp/core
 const { PNG } = require('pngjs');
 
