@@ -13,6 +13,9 @@ const cors = require('cors');
 const Database = require('better-sqlite3');
 require('dotenv').config(); // Charge les variables d'environnement
 
+// Import formatReservationId
+const { formatReservationId } = require('./formatReservationId');
+
 // QRCode pour générer des codes QR
 const QRCode = require('qrcode');
 
@@ -83,10 +86,14 @@ process.on('unhandledRejection', err => {
 // Utilisé pour WhatsApp ET Telegram
 // Paramètres : to = userId, channel = 'telegram' ou 'whatsapp', eventName, category, reservationId
 // Ajout du paramètre price (prix du ticket)
-async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, category, reservationId, price }) {
+// Ajout du paramètre formattedId (nouveau format d'ID) et qrCode (7 chiffres)
+async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, category, reservationId, price, formattedId, qrCode }) {
   try {
     // 1. Générer le QR code (avec l'ID réservation, encodé en JSON)
-    const qrValue = JSON.stringify({ reservationId, eventName, category });
+    // Utiliser qrCode pour le QR code (format demandé)
+    const qrValue = qrCode || (formattedId || reservationId);
+    // Si pas de code (ancien ticket), fallback sur l'ancien format
+    
     // Générer le QR code en haute résolution pour plus de netteté
     const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 400 });
 
@@ -131,17 +138,24 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
       ctx.fillText(`Prix : ${price} F`, width / 2, y);
       y += 24;
     }
-    ctx.fillText(`ID Réservation : ${reservationId}`, width / 2, y);
+    ctx.fillText(`ID Réservation : ${formattedId || reservationId}`, width / 2, y);
 
-    // Centrer le QR code (plus grand, au milieu du ticket)
+    // Centrer le QR code (horizontalement ET verticalement)
+    ctx.imageSmoothingEnabled = false; // Désactive le lissage pour la netteté du QR
     const qrImg = await loadImage(qrBuffer);
     const qrSize = 140;
-    ctx.drawImage(qrImg, (width - qrSize) / 2, height / 2 + 10, qrSize, qrSize);
+    // Calculer la hauteur occupée par les textes du haut (y)
+    // et celle des mentions légales du bas (environ 48px)
+    const topSpace = y; // y est déjà à la bonne position après les textes
+    const bottomSpace = 48;
+    // Espace disponible pour centrer le QR
+    const availableHeight = height - topSpace - bottomSpace;
+    const qrY = topSpace + (availableHeight - qrSize) / 2;
+    ctx.drawImage(qrImg, (width - qrSize) / 2, qrY, qrSize, qrSize);
+    ctx.imageSmoothingEnabled = true; // Réactive le lissage pour les autres éléments
 
     // Optionnel : texte sous le QR
-    ctx.font = 'italic 14px "Open Sans"';
-    ctx.fillStyle = '#444';
-    ctx.fillText('Présentez ce ticket à l’entrée', width / 2, height - 18);
+    // (Texte sous le QR supprimé à la demande de l'utilisateur)
 
     // Ajout des instructions légales et d'usage en tout petit, en bas du ticket
     ctx.font = '10px "Open Sans"';
@@ -161,7 +175,7 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     }
 
     // 5. Sauver temporairement le ticket avec compression (pour WhatsApp/Telegram)
-    const filePath = `/tmp/ticket_${reservationId}.png`;
+    const filePath = `/tmp/ticket_${qrCode || formattedId || reservationId}.png`;
     const fs = require('fs');
     // Compression PNG (canvas)
     fs.writeFileSync(filePath, canvas.toBuffer('image/png'));
@@ -192,7 +206,7 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
         from: 'whatsapp:' + process.env.TWILIO_WHATSAPP_NUMBER,
         to: to,
         body: `Voici votre ticket pour "${eventName}" (${category}) :`,
-        mediaUrl: [`https://${process.env.HOSTNAME || 'your-domain'}/ticket_${reservationId}.png`]
+        mediaUrl: [`https://${process.env.HOSTNAME || 'your-domain'}/ticket_${qrCode || formattedId || reservationId}.png`]
       });
     }
     // 5. Optionnel : tu pourrais supprimer le fichier après envoi
@@ -220,7 +234,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS reservations (
   quantity INTEGER NOT NULL,
   unit_price INTEGER NOT NULL,
   total_price INTEGER NOT NULL,
-  date TEXT NOT NULL
+  date TEXT NOT NULL,
+  formatted_id TEXT,
+  qr_code TEXT
 )`);
 
 // --- API REST admin ---
@@ -422,16 +438,27 @@ app.post('/webhook', (req, res) => {
         const prix = cat.prix || cat.price;
         for (let i = 0; i < state.quantity; i++) {
           // Chaque ticket a sa propre réservation (quantity = 1)
-          const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-              from, event.id, event.name, cat.name, 1, prix, prix
-          );
+          // Calculer le numéro de ticket séquentiel pour cet event/cat
+          const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
+          const ticketNum = (previousTickets.count || 0) + 1;
+          const catIdx = event.categories.findIndex(c => c.name === cat.name);
+          const formattedId = formatReservationId(event.id, catIdx, ticketNum);
+          // Générer un code QR unique de 7 chiffres
+          let qrCode;
+          do {
+            qrCode = String(Math.floor(1000000 + Math.random() * 9000000));
+          } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
+          const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date, formatted_id, qr_code)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`)
+            .run(from, event.id, event.name, cat.name, 1, prix, prix, formattedId, qrCode);
           // Générer et envoyer le ticket image avec QR code
           setTimeout(() => generateAndSendTicket({
             to: from,
             eventName: event.name,
             category: cat.name,
-            reservationId: rsvInfo.lastInsertRowid
+            reservationId: rsvInfo.lastInsertRowid,
+            formattedId,
+            qrCode
           }), 0);
         }
         response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par WhatsApp.\nTapez "menu" pour recommencer.`;
@@ -583,12 +610,25 @@ telegramBot.on('message', async (msg) => {
             userId, event.id, event.name, cat.name, 1, prix, prix
         );
         // Générer et envoyer le ticket image avec QR code
+        // Calculer le numéro de ticket séquentiel pour cet event/cat
+        const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
+        const ticketNum = (previousTickets.count || 0) + 1;
+        const catIdx = event.categories.findIndex(c => c.name === cat.name);
+        const formattedId = formatReservationId(event.id, catIdx, ticketNum);
+        // Générer un code QR unique de 7 chiffres
+        let qrCode;
+        do {
+          qrCode = String(Math.floor(1000000 + Math.random() * 9000000));
+        } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
+        db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
         setTimeout(() => generateAndSendTicket({
           to: userId,
           channel: 'telegram',
           eventName: event.name,
           category: cat.name,
-          reservationId: rsvInfo.lastInsertRowid
+          reservationId: rsvInfo.lastInsertRowid,
+          formattedId,
+          qrCode
         }), 0);
       }
       response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par Telegram.\nTapez "menu" pour recommencer.`;
