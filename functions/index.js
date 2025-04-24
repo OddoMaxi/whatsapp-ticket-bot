@@ -1,27 +1,47 @@
+// =============================
+// IMPORTS ET INITIALISATIONS
+// =============================
+
+// Librairies serveur et utilitaires
 const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const cors = require('cors');
 const Database = require('better-sqlite3');
-require('dotenv').config();
+require('dotenv').config(); // Charge les variables d'environnement
+
+// QRCode pour générer des codes QR
 const QRCode = require('qrcode');
+
+// Jimp (édition d'image) — compatible Railway et local
+// Voir doc : https://www.npmjs.com/package/jimp
 const JimpModule = require('jimp');
-const Jimp = JimpModule.Jimp || JimpModule;
+const Jimp = JimpModule.Jimp || JimpModule; // Patch universel pour toutes versions
+
+// Telegram Bot API
 const TelegramBot = require('node-telegram-bot-api');
 
-// Initialisation du bot Telegram (mode polling OFF, on envoie seulement)
+// =============================
+// INITIALISATION DU BOT TELEGRAM
+// =============================
+// polling: true => le bot écoute les messages entrants (mode développement ou prod unique)
 const telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true }); // polling activé pour recevoir les messages
 
+// =============================
+// INITIALISATION EXPRESS & MIDDLEWARES
+// =============================
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Middleware pour parser JSON, urlencoded, CORS
+// Middleware pour parser les requêtes POST (formulaires, JSON)
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
-app.use(cors());
-app.use(express.static(__dirname));
+app.use(cors()); // Autorise les requêtes cross-origin
+app.use(express.static(__dirname)); // Sert les fichiers statiques
 
-// Sert les tickets générés dans /tmp pour Twilio
+// =============================
+// ROUTE POUR SERVIR LES TICKETS (Twilio/WhatsApp)
+// =============================
 app.get('/ticket_:id.png', (req, res) => {
   const filePath = `/tmp/ticket_${req.params.id}.png`;
   res.sendFile(filePath, err => {
@@ -29,46 +49,60 @@ app.get('/ticket_:id.png', (req, res) => {
   });
 });
 
-// --- Gestion des événements avec SQLite ---
+// =============================
+// BASE DE DONNÉES SQLITE (persistante en local)
+// =============================
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data', 'events.db');
 const fs = require('fs');
+// Crée le dossier de la base si besoin (évite les erreurs au premier lancement)
 if (!fs.existsSync(path.dirname(DB_FILE))) {
   fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 }
-const db = new Database(DB_FILE);
+const db = new Database(DB_FILE); // Connexion à la base
 
-// Log global pour erreurs non gérées
+db.pragma('journal_mode = WAL'); // Mode WAL pour éviter les corruptions
+
+// Gestion des erreurs globales (meilleur debug)
 process.on('uncaughtException', err => {
   console.error('Uncaught Exception:', err);
 });
 process.on('unhandledRejection', err => {
   console.error('Unhandled Rejection:', err);
 });
-db.pragma('journal_mode = WAL');
 
-// --- Génération et envoi du ticket image avec QR Code ---
+// =============================
+// FONCTION : Génère et envoie un ticket image (QR + infos)
+// =============================
+// Utilisé pour WhatsApp ET Telegram
+// Paramètres : to = userId, channel = 'telegram' ou 'whatsapp', eventName, category, reservationId
 async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, category, reservationId }) {
   try {
-    // 1. Générer le QR code (avec l'ID réservation)
+    // 1. Générer le QR code (avec l'ID réservation, encodé en JSON)
     const qrValue = JSON.stringify({ reservationId, eventName, category });
     const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 120 });
-    // 2. Créer une image ticket compacte avec Jimp (320x180)
+
+    // 2. Créer une image ticket blanche compacte (320x180) compatible Railway (@jimp/core)
+    // Voir doc : https://www.npmjs.com/package/jimp#basic-usage
     const width = 320, height = 180;
-    const image = await Jimp.read({
-      width,
-      height,
-      data: Buffer.alloc(width * height * 4, 0xff) // blanc opaque RGBA
-    }); // fond blanc
+    // Crée un buffer RGBA blanc (0xff pour chaque canal)
+    const whiteBuffer = Buffer.alloc(width * height * 4, 0xff);
+    // Crée l'image à partir du buffer (Railway/@jimp/core)
+    const image = await Jimp.read({ data: whiteBuffer, width, height }); // fond blanc
+
+    // 3. Charger une police et écrire les infos sur le ticket
     const font = await Jimp.loadFont(Jimp.FONT_SANS_16_BLACK);
     image.print(font, 10, 15, `Evénement : ${eventName}`);
     image.print(font, 10, 45, `Catégorie : ${category}`);
-    // Insérer le QR code plus petit
+
+    // 4. Insérer le QR code (redimensionné)
     const qrImg = await Jimp.read(qrBuffer);
     image.composite(qrImg.resize(90, 90), width - 100, height - 100);
-    // 3. Sauver temporairement avec compression
+
+    // 5. Sauver temporairement le ticket avec compression (pour WhatsApp/Telegram)
     const filePath = `/tmp/ticket_${reservationId}.png`;
     await image.quality(70).writeAsync(filePath);
-    // Vérifier la taille et réduire si besoin
+
+    // 6. Vérifier la taille et réduire si besoin (WhatsApp limite à ~50ko)
     const fs = require('fs');
     let stats = fs.statSync(filePath);
     if (stats.size > 50000) {
