@@ -9,7 +9,7 @@ const Jimp = require('jimp');
 const TelegramBot = require('node-telegram-bot-api');
 
 // Initialisation du bot Telegram (mode polling OFF, on envoie seulement)
-const telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
+const telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true }); // polling activé pour recevoir les messages
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -42,7 +42,7 @@ process.on('unhandledRejection', err => {
 db.pragma('journal_mode = WAL');
 
 // --- Génération et envoi du ticket image avec QR Code ---
-async function generateAndSendTicket({ to, eventName, category, reservationId }) {
+async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, category, reservationId }) {
   try {
     // 1. Générer le QR code (avec l'ID réservation)
     const qrValue = JSON.stringify({ reservationId, eventName, category });
@@ -66,12 +66,24 @@ async function generateAndSendTicket({ to, eventName, category, reservationId })
       // Dernier recours : resize plus petit si > 50ko
       await image.resize(240, 135).quality(60).writeAsync(filePath);
     }
-    // 4. Envoyer via Telegram
-    await telegramBot.sendPhoto(
-      process.env.TELEGRAM_USER_ID,
-      filePath,
-      { caption: `Voici votre ticket pour "${eventName}" (${category})` }
-    );
+    // 4. Envoi sur le bon canal
+    if (channel === 'telegram') {
+      await telegramBot.sendPhoto(
+        to,
+        filePath,
+        { caption: `Voici votre ticket pour "${eventName}" (${category})` }
+      );
+    } else {
+      // WhatsApp (Twilio)
+      const twilio = require('twilio');
+      const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      await client.messages.create({
+        from: 'whatsapp:' + process.env.TWILIO_WHATSAPP_NUMBER,
+        to: to,
+        body: `Voici votre ticket pour "${eventName}" (${category}) :`,
+        mediaUrl: [`https://${process.env.HOSTNAME || 'your-domain'}/ticket_${reservationId}.png`]
+      });
+    }
     // 5. Optionnel : tu pourrais supprimer le fichier après envoi
   } catch (err) {
     console.error('Erreur génération/envoi ticket:', err);
@@ -178,22 +190,27 @@ function getEventsForBot() {
   return db.prepare('SELECT * FROM events').all().map(ev => ({ ...ev, categories: JSON.parse(ev.categories) }));
 }
 
-// Stockage temporaire de l'état des utilisateurs (par numéro)
-const userStates = {};
+// Stockage temporaire de l'état des utilisateurs (par canal+id)
+const userStates = {}; // ex: { whatsapp:+22507xxxx: {step:...}, telegram:5690412192: {step:...} }
+
+function getUserKey(channel, id) {
+  return `${channel}:${id}`;
+}
 
 app.post('/webhook', (req, res) => {
   const msg = (req.body.Body || '').trim();
   const from = req.body.From;
   let response = '';
+  const userKey = getUserKey('whatsapp', from);
 
   // Initialiser l'état si inconnu
-  if (!userStates[from]) {
-    userStates[from] = { step: 'init' };
+  if (!userStates[userKey]) {
+    userStates[userKey] = { step: 'init' };
   }
-  const state = userStates[from];
+  const state = userStates[userKey];
 
   // Log du message reçu
-  console.log(`Message de ${from}: ${msg}`);
+  console.log(`[WhatsApp] Message de ${from}: ${msg}`);
 
   // Logique du menu
   const events = getEventsForBot();
@@ -281,7 +298,7 @@ app.post('/webhook', (req, res) => {
       let cat = cats[catIdx];
       if (!cat) {
         response = 'Erreur : catégorie introuvable.';
-        userStates[from] = { step: 'init' };
+        userStates[userKey] = { step: 'init' };
       } else if ((cat.quantite || cat.quantity) < state.quantity) {
         response = `Désolé, il ne reste que ${cat.quantite || cat.quantity} places pour cette catégorie.`;
         // On reste à l'étape de quantité
@@ -305,7 +322,7 @@ app.post('/webhook', (req, res) => {
           reservationId: rsvInfo.lastInsertRowid
         }), 0);
         response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par WhatsApp.\nTapez "menu" pour recommencer.`;
-        userStates[from] = { step: 'init' };
+        userStates[userKey] = { step: 'init' };
       }
     }
   } else {
@@ -320,6 +337,153 @@ app.post('/webhook', (req, res) => {
       <Message>${response}</Message>
     </Response>
   `);
+});
+
+// --- Telegram: gestion du flux conversationnel ---
+telegramBot.on('message', async (msg) => {
+  const userId = msg.from.id;
+  const text = (msg.text || '').trim();
+  const userKey = getUserKey('telegram', userId);
+  let response = '';
+
+  // Initialiser l'état si inconnu
+  if (!userStates[userKey]) {
+    userStates[userKey] = { step: 'init' };
+  }
+  const state = userStates[userKey];
+
+  // Log du message reçu
+  console.log(`[Telegram] Message de ${userId}: ${text}`);
+
+  // Logique du menu
+  const events = getEventsForBot();
+  if (/^menu$/i.test(text)) {
+    if (!events.length) {
+      response = 'Aucun événement disponible pour le moment.';
+      state.step = 'init';
+    } else {
+      state.step = 'choose_event';
+      response = 'Bienvenue ! Quel événement vous intéresse ?\n';
+      events.forEach(ev => {
+        response += `${ev.id}. ${ev.name}\n`;
+        ev.categories.forEach((cat, idx) => {
+          response += `   - ${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${cat.quantite || cat.quantity} places)\n`;
+        });
+      });
+      response += '\nRépondez par le numéro de l\'événement.';
+    }
+    await telegramBot.sendMessage(userId, response);
+    return;
+  }
+
+  if (state.step === 'choose_event' && /^\d+$/.test(text)) {
+    try {
+      const event = events.find(ev => ev.id == parseInt(text));
+      if (event) {
+        state.event = event;
+        state.step = 'choose_category';
+        response = `Catégories disponibles pour "${event.name}" :\n`;
+        event.categories.forEach((cat, idx) => {
+          const dispo = (cat.quantite !== undefined ? cat.quantite : cat.quantity);
+          if (dispo < 1) {
+            response += `${idx+1}. ${cat.name} : Rupture de stock\n`;
+          } else {
+            response += `${idx+1}. ${cat.name} (${cat.prix || cat.price}F, ${dispo} places)\n`;
+          }
+        });
+        response += '\nRépondez par le numéro de la catégorie.';
+      } else {
+        response = 'Numéro d\'événement invalide. Merci de réessayer.';
+      }
+    } catch (e) {
+      console.error("[Telegram] Erreur lors du choix d'événement:", e);
+      response = "Erreur interne lors du choix de l'événement. Merci de réessayer ou contacter l'admin.";
+      userStates[userKey] = { step: 'init' };
+    }
+    await telegramBot.sendMessage(userId, response);
+    return;
+  }
+  if (state.step === 'choose_category' && /^\d+$/.test(text)) {
+    const cats = state.event.categories;
+    const catIdx = parseInt(text) - 1;
+    if (cats && cats[catIdx]) {
+      const dispo = (cats[catIdx].quantite !== undefined ? cats[catIdx].quantite : cats[catIdx].quantity);
+      if (dispo < 1) {
+        response = `Désolé, la catégorie "${cats[catIdx].name}" est en rupture de stock. Merci de choisir une autre catégorie.`;
+      } else {
+        state.category = cats[catIdx];
+        state.step = 'choose_quantity';
+        response = `Combien de tickets voulez-vous pour la catégorie "${state.category.name}" à ${state.category.prix || state.category.price}F l'unité ?`;
+      }
+    } else {
+      response = 'Numéro de catégorie invalide. Merci de réessayer.';
+    }
+    await telegramBot.sendMessage(userId, response);
+    return;
+  }
+  if (state.step === 'choose_quantity' && /^\d+$/.test(text)) {
+    const quantity = parseInt(text);
+    if (quantity > 0 && state.category) {
+      state.quantity = quantity;
+      state.step = 'confirm';
+      const prix = state.category.prix || state.category.price;
+      const total = prix * quantity;
+      response = `Vous avez choisi ${quantity} ticket(s) pour "${state.event.name}" en catégorie "${state.category.name}" (${prix}F l'unité).\nTotal à payer : ${total}F.\nRépondez "oui" pour confirmer ou "menu" pour recommencer.`;
+    } else {
+      response = 'Merci d\'indiquer un nombre valide.';
+    }
+    await telegramBot.sendMessage(userId, response);
+    return;
+  }
+  if (state.step === 'confirm' && /^oui$/i.test(text)) {
+    // Confirmation : vérifie stock, décrémente, enregistre
+    const event = db.prepare('SELECT * FROM events WHERE id=?').get(state.event.id);
+    if (!event) {
+      response = 'Erreur : événement introuvable.';
+      userStates[userKey] = { step: 'init' };
+      await telegramBot.sendMessage(userId, response);
+      return;
+    }
+    let cats = JSON.parse(event.categories);
+    let catIdx = cats.findIndex(c => c.name === state.category.name);
+    let cat = cats[catIdx];
+    if (!cat) {
+      response = 'Erreur : catégorie introuvable.';
+      userStates[userKey] = { step: 'init' };
+      await telegramBot.sendMessage(userId, response);
+      return;
+    } else if ((cat.quantite || cat.quantity) < state.quantity) {
+      response = `Désolé, il ne reste que ${cat.quantite || cat.quantity} places pour cette catégorie.`;
+      await telegramBot.sendMessage(userId, response);
+      return;
+    } else {
+      // Décrémente le stock
+      cat.quantite = (cat.quantite || cat.quantity) - state.quantity;
+      cats[catIdx] = cat;
+      db.prepare('UPDATE events SET categories=? WHERE id=?').run(JSON.stringify(cats), event.id);
+      // Enregistre la réservation
+      const prix = cat.prix || cat.price;
+      const total = prix * state.quantity;
+      const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+            userId, event.id, event.name, cat.name, state.quantity, prix, total
+      );
+      // Générer et envoyer le ticket image avec QR code
+      setTimeout(() => generateAndSendTicket({
+        to: userId,
+        channel: 'telegram',
+        eventName: event.name,
+        category: cat.name,
+        reservationId: rsvInfo.lastInsertRowid
+      }), 0);
+      response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par Telegram.\nTapez "menu" pour recommencer.`;
+      userStates[userKey] = { step: 'init' };
+      await telegramBot.sendMessage(userId, response);
+      return;
+    }
+  }
+  // Message par défaut Telegram
+  await telegramBot.sendMessage(userId, 'Bienvenue sur le bot de vente de tickets ! Tapez "menu" pour commencer.');
 });
 
 // Lancement du serveur
