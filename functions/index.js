@@ -54,7 +54,11 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 120 });
     // 2. Créer une image ticket compacte avec Jimp (320x180)
     const width = 320, height = 180;
-    const image = new Jimp(width, height, 0xffffffff); // fond blanc
+    const image = await Jimp.read({
+      width,
+      height,
+      data: Buffer.alloc(width * height * 4, 0xff) // blanc opaque RGBA
+    }); // fond blanc
     const font = await Jimp.loadFont(Jimp.FONT_SANS_16_BLACK);
     image.print(font, 10, 15, `Evénement : ${eventName}`);
     image.print(font, 10, 45, `Catégorie : ${category}`);
