@@ -6,7 +6,10 @@ const Database = require('better-sqlite3');
 require('dotenv').config();
 const QRCode = require('qrcode');
 const Jimp = require('jimp');
-const twilio = require('twilio');
+const TelegramBot = require('node-telegram-bot-api');
+
+// Initialisation du bot Telegram (mode polling OFF, on envoie seulement)
+const telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -63,17 +66,16 @@ async function generateAndSendTicket({ to, eventName, category, reservationId })
       // Dernier recours : resize plus petit si > 50ko
       await image.resize(240, 135).quality(60).writeAsync(filePath);
     }
-    // 4. Envoyer via Twilio WhatsApp
-    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    await client.messages.create({
-      from: 'whatsapp:' + process.env.TWILIO_WHATSAPP_NUMBER,
-      to: to,
-      body: `Voici votre ticket pour "${eventName}" (${category}) :`,
-      mediaUrl: [`https://${process.env.HOSTNAME || 'your-domain'}/ticket_${reservationId}.png`]
-    });
+    // 4. Envoyer via Telegram
+    await telegramBot.sendPhoto(
+      process.env.TELEGRAM_USER_ID,
+      filePath,
+      { caption: `Voici votre ticket pour "${eventName}" (${category})` }
+    );
     // 5. Optionnel : tu pourrais supprimer le fichier après envoi
   } catch (err) {
     console.error('Erreur génération/envoi ticket:', err);
+    // En cas d'erreur Telegram, loggue tout
   }
 }
 
