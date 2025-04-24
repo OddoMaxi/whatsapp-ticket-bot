@@ -20,7 +20,7 @@ const Jimp = JimpModule.Jimp || JimpModule; // Patch universel pour toutes versi
 
 // Ajout dynamique du plugin print pour Railway/@jimp/core (gestion du texte)
 try {
-  require('@jimp/plugin-print').default(Jimp);
+  require('@jimp/plugin-print')(Jimp); // Syntaxe CommonJS, pas de .default
 } catch (e) {
   console.warn('Jimp print plugin non chargé:', e.message);
 }
