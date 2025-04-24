@@ -366,20 +366,22 @@ app.post('/webhook', (req, res) => {
         cat.quantite = (cat.quantite || cat.quantity) - state.quantity;
         cats[catIdx] = cat;
         db.prepare('UPDATE events SET categories=? WHERE id=?').run(JSON.stringify(cats), event.id);
-        // Enregistre la réservation
+        // Enregistre une réservation et génère un ticket POUR CHAQUE place réservée
         const prix = cat.prix || cat.price;
-        const total = prix * state.quantity;
-        const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-            from, event.id, event.name, cat.name, state.quantity, prix, total
-        );
-        // Générer et envoyer le ticket image avec QR code
-        setTimeout(() => generateAndSendTicket({
-          to: from,
-          eventName: event.name,
-          category: cat.name,
-          reservationId: rsvInfo.lastInsertRowid
-        }), 0);
+        for (let i = 0; i < state.quantity; i++) {
+          // Chaque ticket a sa propre réservation (quantity = 1)
+          const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+              from, event.id, event.name, cat.name, 1, prix, prix
+          );
+          // Générer et envoyer le ticket image avec QR code
+          setTimeout(() => generateAndSendTicket({
+            to: from,
+            eventName: event.name,
+            category: cat.name,
+            reservationId: rsvInfo.lastInsertRowid
+          }), 0);
+        }
         response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par WhatsApp.\nTapez "menu" pour recommencer.`;
         userStates[userKey] = { step: 'init' };
       }
@@ -520,21 +522,23 @@ telegramBot.on('message', async (msg) => {
       cat.quantite = (cat.quantite || cat.quantity) - state.quantity;
       cats[catIdx] = cat;
       db.prepare('UPDATE events SET categories=? WHERE id=?').run(JSON.stringify(cats), event.id);
-      // Enregistre la réservation
+      // Enregistre une réservation et génère un ticket POUR CHAQUE place réservée
       const prix = cat.prix || cat.price;
-      const total = prix * state.quantity;
-      const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-            userId, event.id, event.name, cat.name, state.quantity, prix, total
-      );
-      // Générer et envoyer le ticket image avec QR code
-      setTimeout(() => generateAndSendTicket({
-        to: userId,
-        channel: 'telegram',
-        eventName: event.name,
-        category: cat.name,
-        reservationId: rsvInfo.lastInsertRowid
-      }), 0);
+      for (let i = 0; i < state.quantity; i++) {
+        // Chaque ticket a sa propre réservation (quantity = 1)
+        const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+            userId, event.id, event.name, cat.name, 1, prix, prix
+        );
+        // Générer et envoyer le ticket image avec QR code
+        setTimeout(() => generateAndSendTicket({
+          to: userId,
+          channel: 'telegram',
+          eventName: event.name,
+          category: cat.name,
+          reservationId: rsvInfo.lastInsertRowid
+        }), 0);
+      }
       response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par Telegram.\nTapez "menu" pour recommencer.`;
       userStates[userKey] = { step: 'init' };
       await telegramBot.sendMessage(userId, response);
