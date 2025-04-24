@@ -13,16 +13,11 @@ require('dotenv').config(); // Charge les variables d'environnement
 // QRCode pour générer des codes QR
 const QRCode = require('qrcode');
 
-// Jimp (édition d'image) — compatible Railway et local
-// Voir doc : https://www.npmjs.com/package/jimp
-const JimpModule = require('jimp');
-const Jimp = JimpModule.Jimp || JimpModule; // Patch universel pour toutes versions
+// Remplacement de Jimp par canvas (node-canvas) pour la génération de tickets compatible Railway
+// Voir doc : https://www.npmjs.com/package/canvas
+const { createCanvas, loadImage } = require('canvas');
 
-// Pas de chargement dynamique du plugin print : Railway/@jimp/core embarque souvent déjà print/font
-// Si la génération de texte échoue, il faudra changer de version de Jimp ou utiliser une police custom.
-
-
-// PNGJS pour créer une image PNG blanche compatible Jimp/@jimp/core
+// PNGJS pour éventuels usages (QR, etc)
 const { PNG } = require('pngjs');
 
 // Telegram Bot API
@@ -88,38 +83,33 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     const qrValue = JSON.stringify({ reservationId, eventName, category });
     const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 120 });
 
-    // 2. Créer une image ticket blanche compacte (320x180) compatible Railway (@jimp/core)
-    // Méthode universelle : génère un PNG blanc en mémoire avec pngjs, puis charge dans Jimp
+    // 2. Créer une image ticket blanche compacte (320x180) avec canvas
     const width = 320, height = 180;
-    const png = new PNG({ width, height });
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (width * y + x) << 2;
-        png.data[idx] = 255;     // R
-        png.data[idx + 1] = 255; // G
-        png.data[idx + 2] = 255; // B
-        png.data[idx + 3] = 255; // A
-      }
-    }
-    const buffer = PNG.sync.write(png);
-    // Charge ce buffer PNG dans Jimp
-    const image = await Jimp.read(buffer); // fond blanc
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
 
-    // 3. Charger une police bitmap custom et écrire les infos sur le ticket (compatible Railway)
-    const font = await Jimp.loadFont(path.join(__dirname, 'fonts/open_sans_16_black/open_sans_16_black.fnt'));
-    image.print(font, 10, 15, `Evénement : ${eventName}`);
-    image.print(font, 10, 45, `Catégorie : ${category}`);
+    // Fond blanc
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, height);
+
+    // 3. Ecrire les infos sur le ticket (texte)
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.fillText(`Evénement : ${eventName}`, 10, 30);
+    ctx.fillText(`Catégorie : ${category}`, 10, 60);
 
     // 4. Insérer le QR code (redimensionné)
-    const qrImg = await Jimp.read(qrBuffer);
-    image.composite(qrImg.resize(90, 90), width - 100, height - 100);
+    // On charge le buffer QR comme image
+    const qrImg = await loadImage(qrBuffer);
+    ctx.drawImage(qrImg, width - 100, height - 100, 90, 90);
 
     // 5. Sauver temporairement le ticket avec compression (pour WhatsApp/Telegram)
     const filePath = `/tmp/ticket_${reservationId}.png`;
-    await image.quality(70).writeAsync(filePath);
+    const fs = require('fs');
+    // Compression PNG (canvas)
+    fs.writeFileSync(filePath, canvas.toBuffer('image/png'));
 
     // 6. Vérifier la taille et réduire si besoin (WhatsApp limite à ~50ko)
-    const fs = require('fs');
     let stats = fs.statSync(filePath);
     if (stats.size > 50000) {
       // Dernier recours : resize plus petit si > 50ko
