@@ -18,6 +18,9 @@ const QRCode = require('qrcode');
 const JimpModule = require('jimp');
 const Jimp = JimpModule.Jimp || JimpModule; // Patch universel pour toutes versions
 
+// PNGJS pour créer une image PNG blanche compatible Jimp/@jimp/core
+const { PNG } = require('pngjs');
+
 // Telegram Bot API
 const TelegramBot = require('node-telegram-bot-api');
 
@@ -82,12 +85,21 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     const qrBuffer = await QRCode.toBuffer(qrValue, { type: 'png', width: 120 });
 
     // 2. Créer une image ticket blanche compacte (320x180) compatible Railway (@jimp/core)
-    // Voir doc : https://www.npmjs.com/package/jimp#basic-usage
+    // Méthode universelle : génère un PNG blanc en mémoire avec pngjs, puis charge dans Jimp
     const width = 320, height = 180;
-    // Crée un buffer RGBA blanc (0xff pour chaque canal)
-    const whiteBuffer = Buffer.alloc(width * height * 4, 0xff);
-    // Crée l'image à partir du buffer (Railway/@jimp/core)
-    const image = await Jimp.read({ data: whiteBuffer, width, height }); // fond blanc
+    const png = new PNG({ width, height });
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (width * y + x) << 2;
+        png.data[idx] = 255;     // R
+        png.data[idx + 1] = 255; // G
+        png.data[idx + 2] = 255; // B
+        png.data[idx + 3] = 255; // A
+      }
+    }
+    const buffer = PNG.sync.write(png);
+    // Charge ce buffer PNG dans Jimp
+    const image = await Jimp.read(buffer); // fond blanc
 
     // 3. Charger une police et écrire les infos sur le ticket
     const font = await Jimp.loadFont(Jimp.FONT_SANS_16_BLACK);

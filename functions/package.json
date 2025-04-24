@@ -289,6 +289,7 @@
     "picomatch": "^2.3.1",
     "pirates": "^4.0.7",
     "pkg-dir": "^4.2.0",
+    "pngjs": "^7.0.0",
     "prelude-ls": "^1.2.1",
     "pretty-format": "^29.7.0",
     "prompts": "^2.4.2",
