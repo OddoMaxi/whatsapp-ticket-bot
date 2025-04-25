@@ -188,13 +188,12 @@ async function generateAndSendTicket({ to, channel = 'whatsapp', eventName, cate
     // 4. Envoi sur le bon canal
     if (channel === 'telegram') {
       // Ajoute contentType pour supprimer l'avertissement de dépréciation
-      // Ajout de l'option contentType pour éviter l'avertissement de dépréciation de Telegram
       await telegramBot.sendPhoto(
         to,
         filePath,
         {
           caption: `Voici votre ticket pour "${eventName}" (${category})`,
-          contentType: 'image/png' // <-- Ajouté pour éviter l'avertissement Telegram
+          contentType: 'image/png'
         }
       );
     } else {
