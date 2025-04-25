@@ -441,7 +441,17 @@ app.post('/webhook', (req, res) => {
           // Calculer le numéro de ticket séquentiel pour cet event/cat
           const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
           const ticketNum = (previousTickets.count || 0) + 1;
-          const catIdx = event.categories.findIndex(c => c.name === cat.name);
+          // S'assurer que event.categories est bien un tableau
+          let categoriesArr = event.categories;
+          if (typeof categoriesArr === 'string') {
+            try {
+              categoriesArr = JSON.parse(categoriesArr);
+            } catch (e) {
+              console.error('Erreur de parsing event.categories:', event.categories, e);
+              categoriesArr = [];
+            }
+          }
+          const catIdx = Array.isArray(categoriesArr) ? categoriesArr.findIndex(c => c.name === cat.name) : -1;
           const formattedId = formatReservationId(event.id, catIdx, ticketNum);
           // Générer un code QR unique de 7 chiffres
           let qrCode;
