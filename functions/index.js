@@ -440,30 +440,6 @@ app.post('/webhook', (req, res) => {
           // Chaque ticket a sa propre réservation (quantity = 1)
           // Calculer le numéro de ticket séquentiel pour cet event/cat
           const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
-          const ticketNum = (previousTickets.count || 0) + 1;
-          // S'assurer que event.categories est bien un tableau
-          let categoriesArr = event.categories;
-          if (typeof categoriesArr === 'string') {
-            try {
-              categoriesArr = JSON.parse(categoriesArr);
-            } catch (e) {
-              console.error('Erreur de parsing event.categories:', event.categories, e);
-              categoriesArr = [];
-            }
-          }
-          const catIdx = Array.isArray(categoriesArr) ? categoriesArr.findIndex(c => c.name === cat.name) : -1;
-          const formattedId = formatReservationId(event.id, catIdx, ticketNum);
-          // Générer un code QR unique de 7 chiffres
-          let qrCode;
-          do {
-            qrCode = String(Math.floor(1000000 + Math.random() * 9000000));
-          } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
-          const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date, formatted_id, qr_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`)
-            .run(from, event.id, event.name, cat.name, 1, prix, prix, formattedId, qrCode);
-          // Générer et envoyer le ticket image avec QR code
-          setTimeout(() => {
-            try {
               if (catIdx === undefined || formattedId === undefined || qrCode === undefined) {
                 console.error('Paramètre manquant (WhatsApp):', {catIdx, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid});
               }
@@ -630,11 +606,20 @@ telegramBot.on('message', async (msg) => {
           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
             userId, event.id, event.name, cat.name, 1, prix, prix
         );
-        // Générer et envoyer le ticket image avec QR code
         // Calculer le numéro de ticket séquentiel pour cet event/cat
         const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
         const ticketNum = (previousTickets.count || 0) + 1;
-        const catIdx = event.categories.findIndex(c => c.name === cat.name);
+        // S'assurer que event.categories est bien un tableau
+        let categoriesArr = event.categories;
+        if (typeof categoriesArr === 'string') {
+          try {
+            categoriesArr = JSON.parse(categoriesArr);
+          } catch (e) {
+            console.error('Erreur de parsing event.categories:', event.categories, e);
+            categoriesArr = [];
+          }
+        }
+        const catIdx = Array.isArray(categoriesArr) ? categoriesArr.findIndex(c => c.name === cat.name) : -1;
         const formattedId = formatReservationId(event.id, catIdx, ticketNum);
         // Générer un code QR unique de 7 chiffres
         let qrCode;
