@@ -670,9 +670,9 @@ telegramBot.on('message', async (msg) => {
       for (let i = 0; i < state.quantity; i++) {
         try {
           // Chaque ticket a sa propre réservation (quantity = 1)
-          const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+          const rsvInfo = db.prepare(`INSERT INTO reservations (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-              userId, phone, event.id, event.name, cat.name, 1, prix, prix
+              userId, '', event.id, event.name, cat.name, 1, prix, prix
           );
           // Calculer le numéro de ticket séquentiel pour cet event/cat
           const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
