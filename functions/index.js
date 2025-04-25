@@ -30,14 +30,9 @@ registerFont(path.join(__dirname, 'fonts/OpenSans-Regular.ttf'), { family: 'Open
 // PNGJS pour éventuels usages (QR, etc)
 const { PNG } = require('pngjs');
 
-// Telegram Bot API
-const TelegramBot = require('node-telegram-bot-api');
+// Import du bot Telegram
+const telegramBot = require('./bot');
 
-// =============================
-// INITIALISATION DU BOT TELEGRAM
-// =============================
-// polling: true => le bot écoute les messages entrants (mode développement ou prod unique)
-const telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true }); // polling activé pour recevoir les messages
 
 // =============================
 // INITIALISATION EXPRESS & MIDDLEWARES
@@ -53,36 +48,15 @@ app.use(cors()); // Autorise les requêtes cross-origin
 app.use(express.static(__dirname)); // Sert les fichiers statiques
 
 // --- AUTHENTIFICATION ADMIN ---
-app.get('/admin/login', (req, res) => {
-  res.send(`
-    <form method="POST" action="/admin/login" style="max-width:400px;margin:60px auto;padding:2em;background:#fff;border-radius:7px;box-shadow:0 2px 10px #0002;">
-      <h2>Connexion Admin</h2>
-      <input type="text" name="login" placeholder="Login" style="width:100%;padding:8px;margin-bottom:1em;" required />
-      <input type="password" name="password" placeholder="Mot de passe" style="width:100%;padding:8px;margin-bottom:1em;" required />
-      <button type="submit" style="width:100%;padding:8px;background:#1976d2;color:#fff;border:none;border-radius:3px;">Se connecter</button>
-    </form>
-  `);
-});
-app.post('/admin/login', handleLogin);
-app.get('/admin/logout', handleLogout);
+const adminRouter = require('./routes/admin');
+app.use('/admin', adminRouter);
 
-// Protéger l'accès à l'interface admin après les routes login/logout
-app.use(['/admin','/admin/','/admin.html','/admin/*'], requireAuth);
-
-// Sert l'interface admin après authentification
-app.get('/admin', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'admin.html'));
-});
 
 // =============================
-// ROUTE POUR SERVIR LES TICKETS (Twilio/WhatsApp)
+// ROUTES POUR SERVIR LES TICKETS (Twilio/WhatsApp)
 // =============================
-app.get('/ticket_:id.png', (req, res) => {
-  const filePath = `/tmp/ticket_${req.params.id}.png`;
-  res.sendFile(filePath, err => {
-    if (err) res.status(404).send('Ticket introuvable');
-  });
-});
+const ticketRouter = require('./routes/ticket');
+app.use('/', ticketRouter);
 
 // =============================
 // BASE DE DONNÉES SQLITE (persistante en local)
@@ -482,8 +456,8 @@ app.post('/webhook', (req, res) => {
   try {
     // Chaque ticket a sa propre réservation (quantity = 1)
     const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-      from, phone, event.id, event.name, cat.name, 1, prix, prix
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+      from, event.id, event.name, cat.name, 1, prix, prix
     );
 
     // Calculer le numéro de ticket séquentiel pour cet event/cat
