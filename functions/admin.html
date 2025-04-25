@@ -17,57 +17,113 @@
     .cat-row input { width: 90px; }
     input, select { padding: 4px; margin: 2px; }
     .form-section { background: #fff; padding: 1em; border-radius: 5px; box-shadow: 0 2px 6px #0001; margin-bottom: 2em; }
+    .admin-menu { background: #fff; margin-bottom: 2em; border-radius: 5px; box-shadow: 0 2px 6px #0001; }
+    .admin-menu ul { list-style: none; margin: 0; padding: 0; display: flex; }
+    .admin-menu li { margin: 0; }
+    .admin-menu a { display: block; padding: 12px 28px; color: #1976d2; text-decoration: none; font-weight: bold; border-bottom: 2px solid transparent; transition: background 0.2s, border-bottom 0.2s; }
+    .admin-menu a.active, .admin-menu a:hover { background: #f0f6ff; border-bottom: 2px solid #1976d2; color: #1976d2; }
   </style>
 </head>
 <body>
-  <h1>Gestion des Événements</h1>
-  <div class="form-section">
-    <h2 id="form-title">Ajouter un événement</h2>
-    <form id="event-form">
-      <input type="hidden" id="event-id">
-      <label>Nom : <input type="text" id="event-name" required></label><br>
-      <label>Date : <input type="datetime-local" id="event-date" required></label><br>
-      <label>Organisateur : <input type="text" id="event-organizer" required></label><br>
-      <label>Lieu : <input type="text" id="event-location" required></label><br>
-      <b>Catégories de tickets :</b>
-      <table class="cat-table" id="cat-table">
-        <thead><tr><th>Nom</th><th>Prix</th><th>Quantité</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <button type="button" class="btn btn-secondary" onclick="addCatRow()">+ Ajouter une catégorie</button><br><br>
-      <button type="submit" class="btn">Enregistrer</button>
-      <button type="button" class="btn btn-secondary" onclick="resetForm()">Annuler</button>
-    </form>
+  <nav class="admin-menu">
+    <ul>
+      <li><a href="#" id="menu-dashboard" class="active">Tableau de bord</a></li>
+      <li><a href="#" id="menu-events">Événements</a></li>
+      <li><a href="#" id="menu-reservations">Réservations</a></li>
+      <li style="margin-left:auto;"><a href="/admin/logout" class="btn btn-secondary" style="margin-left:24px;">Déconnexion</a></li>
+    </ul>
+  </nav>
+  <h1>Administration Billetterie</h1>
+
+  <div id="section-dashboard">
+    <h2>Tableau de bord des tickets</h2>
+    <table id="dashboard-table">
+      <thead>
+        <tr>
+          <th>Événement</th><th>Catégorie</th><th>Prix</th><th>Stock initial</th><th>Vendus</th><th>Restants</th><th>Ventes totales</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
-  <h2>Liste des événements</h2>
-  <table id="events-table">
-    <thead>
-      <tr>
-        <th>Nom</th><th>Date</th><th>Organisateur</th><th>Lieu</th><th>Catégories</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
 
-<h2>Liste des réservations</h2>
-<table id="reservations-table">
-  <thead>
-    <tr>
-      <th>Utilisateur</th><th>Événement</th><th>Catégorie</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th><th>Date</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+  <div id="section-events" style="display:none">
+    <div class="form-section">
+      <h2 id="form-title">Ajouter un événement</h2>
+      <form id="event-form">
+        <input type="hidden" id="event-id">
+        <label>Nom : <input type="text" id="event-name" required></label><br>
+        <label>Date : <input type="datetime-local" id="event-date" required></label><br>
+        <label>Organisateur : <input type="text" id="event-organizer" required></label><br>
+        <label>Lieu : <input type="text" id="event-location" required></label><br>
+        <b>Catégories de tickets :</b>
+        <table class="cat-table" id="cat-table">
+          <thead><tr><th>Nom</th><th>Prix</th><th>Quantité</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button type="button" class="btn btn-secondary" onclick="addCatRow()">+ Ajouter une catégorie</button><br><br>
+        <button type="submit" class="btn">Enregistrer</button>
+        <button type="button" class="btn btn-secondary" onclick="resetForm()">Annuler</button>
+      </form>
+    </div>
+    <h2>Liste des événements</h2>
+    <table id="events-table">
+      <thead>
+        <tr>
+          <th>Nom</th><th>Date</th><th>Organisateur</th><th>Lieu</th><th>Catégories</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
-<h2>Tableau de bord des tickets</h2>
-<table id="dashboard-table">
-  <thead>
-    <tr>
-      <th>Événement</th><th>Catégorie</th><th>Prix</th><th>Stock initial</th><th>Vendus</th><th>Restants</th><th>Ventes totales</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+  <div id="section-reservations" style="display:none">
+    <h2>Liste des réservations</h2>
+    <table id="reservations-table">
+      <thead>
+        <tr>
+          <th>Utilisateur</th><th>Téléphone</th><th>Événement</th><th>Catégorie</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th><th>Date</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Menu navigation logic
+    const menuDashboard = document.getElementById('menu-dashboard');
+    const menuEvents = document.getElementById('menu-events');
+    const menuReservations = document.getElementById('menu-reservations');
+    const sectionDashboard = document.getElementById('section-dashboard');
+    const sectionEvents = document.getElementById('section-events');
+    const sectionReservations = document.getElementById('section-reservations');
+    
+    function setActiveMenu(menu) {
+      [menuDashboard, menuEvents, menuReservations].forEach(m => m.classList.remove('active'));
+      menu.classList.add('active');
+    }
+    menuDashboard.onclick = function(e) {
+      e.preventDefault();
+      setActiveMenu(menuDashboard);
+      sectionDashboard.style.display = '';
+      sectionEvents.style.display = 'none';
+      sectionReservations.style.display = 'none';
+    };
+    menuEvents.onclick = function(e) {
+      e.preventDefault();
+      setActiveMenu(menuEvents);
+      sectionDashboard.style.display = 'none';
+      sectionEvents.style.display = '';
+      sectionReservations.style.display = 'none';
+    };
+    menuReservations.onclick = function(e) {
+      e.preventDefault();
+      setActiveMenu(menuReservations);
+      sectionDashboard.style.display = 'none';
+      sectionEvents.style.display = 'none';
+      sectionReservations.style.display = '';
+    };
+  </script>
 
 <script>
 const api = '/admin/events';

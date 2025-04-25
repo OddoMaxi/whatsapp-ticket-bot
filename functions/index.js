@@ -8,6 +8,8 @@ process.env.FONTCONFIG_PATH = __dirname + '/fonts';
 // Librairies serveur et utilitaires
 const express = require('express');
 const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
+const { requireAuth, handleLogin, handleLogout } = require('./auth');
 const path = require('path');
 const cors = require('cors');
 const Database = require('better-sqlite3');
@@ -46,8 +48,31 @@ const port = process.env.PORT || 8080;
 // Middleware pour parser les requêtes POST (formulaires, JSON)
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
+app.use(cookieParser());
 app.use(cors()); // Autorise les requêtes cross-origin
 app.use(express.static(__dirname)); // Sert les fichiers statiques
+
+// --- AUTHENTIFICATION ADMIN ---
+app.get('/admin/login', (req, res) => {
+  res.send(`
+    <form method="POST" action="/admin/login" style="max-width:400px;margin:60px auto;padding:2em;background:#fff;border-radius:7px;box-shadow:0 2px 10px #0002;">
+      <h2>Connexion Admin</h2>
+      <input type="text" name="login" placeholder="Login" style="width:100%;padding:8px;margin-bottom:1em;" required />
+      <input type="password" name="password" placeholder="Mot de passe" style="width:100%;padding:8px;margin-bottom:1em;" required />
+      <button type="submit" style="width:100%;padding:8px;background:#1976d2;color:#fff;border:none;border-radius:3px;">Se connecter</button>
+    </form>
+  `);
+});
+app.post('/admin/login', handleLogin);
+app.get('/admin/logout', handleLogout);
+
+// Protéger l'accès à l'interface admin après les routes login/logout
+app.use(['/admin','/admin/','/admin.html','/admin/*'], requireAuth);
+
+// Sert l'interface admin après authentification
+app.get('/admin', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin.html'));
+});
 
 // =============================
 // ROUTE POUR SERVIR LES TICKETS (Twilio/WhatsApp)
@@ -228,6 +253,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS events (
 db.exec(`CREATE TABLE IF NOT EXISTS reservations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user TEXT NOT NULL,
+  phone TEXT,
   event_id INTEGER NOT NULL,
   event_name TEXT NOT NULL,
   category_name TEXT NOT NULL,
@@ -239,11 +265,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS reservations (
   qr_code TEXT
 )`);
 
+// --- AUTHENTIFICATION ADMIN ---
+app.get('/admin/login', (req, res) => {
+  res.send(`
+    <form method="POST" action="/admin/login" style="max-width:400px;margin:60px auto;padding:2em;background:#fff;border-radius:7px;box-shadow:0 2px 10px #0002;">
+      <h2>Connexion Admin</h2>
+      <input type="text" name="login" placeholder="Login" style="width:100%;padding:8px;margin-bottom:1em;" required />
+      <input type="password" name="password" placeholder="Mot de passe" style="width:100%;padding:8px;margin-bottom:1em;" required />
+      <button type="submit" style="width:100%;padding:8px;background:#1976d2;color:#fff;border:none;border-radius:3px;">Se connecter</button>
+    </form>
+  `);
+});
+app.post('/admin/login', handleLogin);
+app.get('/admin/logout', handleLogout);
+
 // --- API REST admin ---
 
 // Liste des réservations
 app.get('/admin/reservations', (req, res) => {
   const rows = db.prepare('SELECT * FROM reservations ORDER BY date DESC').all();
+  // Add fallback for old reservations without phone
+  rows.forEach(r => { if (typeof r.phone === 'undefined') r.phone = ''; });
   res.json(rows);
 });
 
@@ -440,8 +482,8 @@ app.post('/webhook', (req, res) => {
   try {
     // Chaque ticket a sa propre réservation (quantity = 1)
     const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-      from, event.id, event.name, cat.name, 1, prix, prix
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+      from, phone, event.id, event.name, cat.name, 1, prix, prix
     );
 
     // Calculer le numéro de ticket séquentiel pour cet event/cat
@@ -655,8 +697,8 @@ telegramBot.on('message', async (msg) => {
         try {
           // Chaque ticket a sa propre réservation (quantity = 1)
           const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-              userId, event.id, event.name, cat.name, 1, prix, prix
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+              userId, phone, event.id, event.name, cat.name, 1, prix, prix
           );
           // Calculer le numéro de ticket séquentiel pour cet event/cat
           const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);

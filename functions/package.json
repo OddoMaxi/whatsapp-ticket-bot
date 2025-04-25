@@ -57,6 +57,7 @@
     "content-type": "^1.0.5",
     "convert-source-map": "^2.0.0",
     "cookie": "^0.7.1",
+    "cookie-parser": "^1.4.7",
     "cookie-signature": "^1.0.6",
     "cors": "^2.8.5",
     "create-jest": "^29.7.0",

@@ -7,6 +7,7 @@ function fetchReservations() {
     rows.forEach(rsv => {
       tbody.innerHTML += `<tr>
         <td>${rsv.user}</td>
+        <td>${rsv.phone || ''}</td>
         <td>${rsv.event_name}</td>
         <td>${rsv.category_name}</td>
         <td>${rsv.quantity}</td>
