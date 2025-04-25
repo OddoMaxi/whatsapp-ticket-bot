@@ -455,9 +455,9 @@ app.post('/webhook', (req, res) => {
         for (let i = 0; i < state.quantity; i++) {
   try {
     // Chaque ticket a sa propre réservation (quantity = 1)
-    const rsvInfo = db.prepare(`INSERT INTO reservations (user, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-      from, event.id, event.name, cat.name, 1, prix, prix
+    const rsvInfo = db.prepare(`INSERT INTO reservations (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+      from, req.body.From, event.id, event.name, cat.name, 1, prix, prix
     );
 
     // Calculer le numéro de ticket séquentiel pour cet event/cat
