@@ -3,91 +3,166 @@
 <head>
   <meta charset="UTF-8">
   <title>Admin - Gestion des Événements</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 2em; background: #f7f7f7; }
-    h1 { color: #333; }
-    table { border-collapse: collapse; width: 100%; margin-bottom: 2em; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background: #eee; }
-    tr:nth-child(even) { background: #fafafa; }
-    .cat-table { margin-top: 8px; }
-    .btn { padding: 4px 10px; margin: 2px; border: none; background: #1976d2; color: #fff; border-radius: 3px; cursor: pointer; }
-    .btn-danger { background: #d32f2f; }
-    .btn-secondary { background: #757575; }
-    .cat-row input { width: 90px; }
-    input, select { padding: 4px; margin: 2px; }
-    .form-section { background: #fff; padding: 1em; border-radius: 5px; box-shadow: 0 2px 6px #0001; margin-bottom: 2em; }
-    .admin-menu { background: #fff; margin-bottom: 2em; border-radius: 5px; box-shadow: 0 2px 6px #0001; }
-    .admin-menu ul { list-style: none; margin: 0; padding: 0; display: flex; }
-    .admin-menu li { margin: 0; }
-    .admin-menu a { display: block; padding: 12px 28px; color: #1976d2; text-decoration: none; font-weight: bold; border-bottom: 2px solid transparent; transition: background 0.2s, border-bottom 0.2s; }
-    .admin-menu a.active, .admin-menu a:hover { background: #f0f6ff; border-bottom: 2px solid #1976d2; color: #1976d2; }
-  </style>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-  <nav class="admin-menu">
-    <ul>
-      <li><a href="#" id="menu-dashboard" class="active">Tableau de bord</a></li>
-      <li><a href="#" id="menu-events">Événements</a></li>
-      <li><a href="#" id="menu-reservations">Réservations</a></li>
-      <li style="margin-left:auto;"><a href="/admin/logout" class="btn btn-secondary" style="margin-left:24px;">Déconnexion</a></li>
-    </ul>
-  </nav>
-  <h1>Administration Billetterie</h1>
-
-  <div id="section-dashboard">
-    <h2>Tableau de bord des tickets</h2>
-    <table id="dashboard-table">
-      <thead>
-        <tr>
-          <th>Événement</th><th>Catégorie</th><th>Prix</th><th>Stock initial</th><th>Vendus</th><th>Restants</th><th>Ventes totales</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-
-  <div id="section-events" style="display:none">
-    <div class="form-section">
-      <h2 id="form-title">Ajouter un événement</h2>
-      <form id="event-form">
-        <input type="hidden" id="event-id">
-        <label>Nom : <input type="text" id="event-name" required></label><br>
-        <label>Date : <input type="datetime-local" id="event-date" required></label><br>
-        <label>Organisateur : <input type="text" id="event-organizer" required></label><br>
-        <label>Lieu : <input type="text" id="event-location" required></label><br>
-        <b>Catégories de tickets :</b>
-        <table class="cat-table" id="cat-table">
-          <thead><tr><th>Nom</th><th>Prix</th><th>Quantité</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <button type="button" class="btn btn-secondary" onclick="addCatRow()">+ Ajouter une catégorie</button><br><br>
-        <button type="submit" class="btn">Enregistrer</button>
-        <button type="button" class="btn btn-secondary" onclick="resetForm()">Annuler</button>
-      </form>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <!-- Top Navigation -->
+  <nav class="bg-white shadow-sm w-full">
+    <div class="max-w-6xl mx-auto px-4 flex items-center justify-between h-16">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center text-white text-xl font-bold">T</div>
+        <span class="text-xl font-extrabold text-gray-900 tracking-tight">souli-souli Bot Admin</span>
+      </div>
+      <div class="flex gap-2">
+        <a href="#" id="menu-dashboard" class="px-4 py-2 rounded-md font-semibold text-gray-700 hover:bg-red-100 active:bg-red-200 transition">Tableau de bord</a>
+        <a href="#" id="menu-events" class="px-4 py-2 rounded-md font-semibold text-gray-700 hover:bg-red-100 active:bg-red-200 transition">Événements</a>
+        <a href="#" id="menu-reservations" class="px-4 py-2 rounded-md font-semibold text-gray-700 hover:bg-red-100 active:bg-red-200 transition">Réservations</a>
+        <a href="/admin/logout" class="ml-6 px-4 py-2 rounded-md font-semibold bg-gray-200 text-gray-700 hover:bg-red-200 transition">Déconnexion</a>
+      </div>
     </div>
-    <h2>Liste des événements</h2>
-    <table id="events-table">
-      <thead>
-        <tr>
-          <th>Nom</th><th>Date</th><th>Organisateur</th><th>Lieu</th><th>Catégories</th><th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+  </nav>
 
-  <div id="section-reservations" style="display:none">
-    <h2>Liste des réservations</h2>
-    <table id="reservations-table">
-      <thead>
-        <tr>
-          <th>Utilisateur</th><th>Téléphone</th><th>Événement</th><th>Catégorie</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th><th>Date</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+  <main class="max-w-6xl mx-auto mt-8 px-4">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">Administration Billetterie</h1>
+
+    <!-- Dashboard Section -->
+    <div id="section-dashboard">
+  <h2 class="text-xl font-semibold text-gray-700 mb-6">Tableau de bord des souli-souli Bots</h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <!-- Carte 1 : Total ventes -->
+    <div class="bg-white rounded-xl shadow p-6 flex flex-col justify-between min-h-[110px]">
+      <div class="text-gray-500 font-semibold">Total ventes</div>
+      <div class="text-3xl font-bold text-gray-900 mt-2" id="total-sales">...</div>
+    </div>
+    <!-- Carte 2 : Activité récente -->
+    <div class="bg-red-600 rounded-xl shadow p-6 text-white flex flex-col min-h-[110px]">
+      <div class="font-semibold mb-2 flex items-center justify-between">
+        Activité récente
+        <span class="text-2xl">&#8942;</span>
+      </div>
+      <ul class="text-sm space-y-1" id="recent-activity">
+        <li>Chargement...</li>
+      </ul>
+    </div>
+    <!-- Carte 3 : Performance (graphique) -->
+    <div class="bg-white rounded-xl shadow p-6 flex flex-col min-h-[110px]">
+      <div class="flex items-center justify-between">
+        <span class="text-gray-500 font-semibold">Performance</span>
+        <span class="text-xl text-gray-400">&#8645;</span>
+      </div>
+      <canvas id="performance-chart" height="60"></canvas>
+    </div>
   </div>
+  <div class="bg-white rounded-xl shadow p-6">
+    <h3 class="text-lg font-semibold mb-4">Detailed Metrics</h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="bg-red-100 rounded-lg p-4 flex flex-col items-center">
+        <div class="text-gray-700 mb-2">Tickets par catégorie</div>
+        <canvas id="pie-metric" height="120"></canvas>
+      </div>
+      <div class="bg-gray-100 rounded-lg p-4 flex flex-col items-center">
+        <div class="text-gray-700 mb-2">Ventes sur le temps</div>
+        <canvas id="line-metric" height="120"></canvas>
+      </div>
+      <div class="bg-red-600 rounded-lg p-4 flex flex-col items-center">
+        <div class="text-white mb-2">Répartition réservations</div>
+        <canvas id="scatter-metric" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+    <!-- Events Section -->
+    <div id="section-events" class="hidden">
+      <div class="bg-white rounded-xl shadow p-6 mb-6">
+        <h2 id="form-title" class="text-lg font-semibold mb-4">Ajouter un événement</h2>
+        <form id="event-form" class="space-y-3">
+          <input type="hidden" id="event-id">
+          <div class="flex flex-col md:flex-row gap-4">
+            <label class="flex-1">
+              <span class="block text-sm font-medium text-gray-700 mb-1">Nom</span>
+              <input type="text" id="event-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500" required>
+            </label>
+            <label class="flex-1">
+              <span class="block text-sm font-medium text-gray-700 mb-1">Date</span>
+              <input type="datetime-local" id="event-date" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500" required>
+            </label>
+          </div>
+          <div class="flex flex-col md:flex-row gap-4">
+            <label class="flex-1">
+              <span class="block text-sm font-medium text-gray-700 mb-1">Organisateur</span>
+              <input type="text" id="event-organizer" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500" required>
+            </label>
+            <label class="flex-1">
+              <span class="block text-sm font-medium text-gray-700 mb-1">Lieu</span>
+              <input type="text" id="event-location" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500" required>
+            </label>
+          </div>
+          <div>
+            <span class="block text-sm font-medium text-gray-700 mb-2">Catégories de souli-souli Bots :</span>
+            <div class="overflow-x-auto">
+              <table class="min-w-full bg-gray-50 rounded-md" id="cat-table">
+                <thead class="bg-gray-200">
+                  <tr>
+                    <th class="px-2 py-1">Nom</th>
+                    <th class="px-2 py-1">Prix</th>
+                    <th class="px-2 py-1">Quantité</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <button type="button" class="mt-2 px-3 py-1 bg-gray-200 hover:bg-red-200 text-gray-700 rounded transition" onclick="addCatRow()">+ Ajouter une catégorie</button>
+          </div>
+          <div class="flex gap-2 mt-4">
+            <button type="submit" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg shadow-sm transition">Enregistrer</button>
+            <button type="button" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-lg shadow-sm transition" onclick="resetForm()">Annuler</button>
+          </div>
+        </form>
+      </div>
+      <h2 class="text-lg font-semibold mb-2">Liste des événements</h2>
+      <div class="overflow-x-auto rounded-lg shadow">
+        <table id="events-table" class="min-w-full bg-white rounded-lg shadow text-sm">
+  <thead class="bg-red-600 text-white">
+    <tr>
+      <th class="px-6 py-3 text-left font-semibold">Nom</th>
+      <th class="px-6 py-3 text-left font-semibold">Date</th>
+      <th class="px-6 py-3 text-left font-semibold">Organisateur</th>
+      <th class="px-6 py-3 text-left font-semibold">Lieu</th>
+      <th class="px-6 py-3 text-left font-semibold">Catégories</th>
+      <th class="px-6 py-3 text-left font-semibold">Actions</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-gray-100"></tbody>
+</table>
+      </div>
+    </div>
+
+    <!-- Reservations Section -->
+    <div id="section-reservations" class="hidden">
+      <h2 class="text-lg font-semibold mb-2">Liste des réservations</h2>
+      <div class="overflow-x-auto rounded-lg shadow">
+        <table id="reservations-table" class="min-w-full bg-white rounded-lg shadow text-sm">
+  <thead class="bg-red-600 text-white">
+    <tr>
+      <th class="px-6 py-3 text-left font-semibold">Utilisateur</th>
+      <th class="px-6 py-3 text-left font-semibold">Téléphone</th>
+      <th class="px-6 py-3 text-left font-semibold">Événement</th>
+      <th class="px-6 py-3 text-left font-semibold">Catégorie</th>
+      <th class="px-6 py-3 text-left font-semibold">Quantité</th>
+      <th class="px-6 py-3 text-left font-semibold">Prix unitaire</th>
+      <th class="px-6 py-3 text-left font-semibold">Total</th>
+      <th class="px-6 py-3 text-left font-semibold">Date</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-gray-100"></tbody>
+</table>
+      </div>
+    </div>
+  </main>
+</body>
 
   <script>
     // Menu navigation logic
@@ -105,24 +180,25 @@
     menuDashboard.onclick = function(e) {
       e.preventDefault();
       setActiveMenu(menuDashboard);
-      sectionDashboard.style.display = '';
-      sectionEvents.style.display = 'none';
-      sectionReservations.style.display = 'none';
+      sectionDashboard.classList.remove('hidden');
+      sectionEvents.classList.add('hidden');
+      sectionReservations.classList.add('hidden');
     };
     menuEvents.onclick = function(e) {
       e.preventDefault();
       setActiveMenu(menuEvents);
-      sectionDashboard.style.display = 'none';
-      sectionEvents.style.display = '';
-      sectionReservations.style.display = 'none';
+      sectionDashboard.classList.add('hidden');
+      sectionEvents.classList.remove('hidden');
+      sectionReservations.classList.add('hidden');
     };
     menuReservations.onclick = function(e) {
       e.preventDefault();
       setActiveMenu(menuReservations);
-      sectionDashboard.style.display = 'none';
-      sectionEvents.style.display = 'none';
-      sectionReservations.style.display = '';
+      sectionDashboard.classList.add('hidden');
+      sectionEvents.classList.add('hidden');
+      sectionReservations.classList.remove('hidden');
     };
+
   </script>
 
 <script>
@@ -134,15 +210,15 @@ function fetchEvents() {
     tbody.innerHTML = '';
     events.forEach(ev => {
       const cats = ev.categories.map(c => `${c.name} (${c.prix}F, ${c.quantite} places)`).join('<br>');
-      tbody.innerHTML += `<tr>
-        <td>${ev.name}</td>
-        <td>${new Date(ev.date).toLocaleString()}</td>
-        <td>${ev.organizer}</td>
-        <td>${ev.location}</td>
-        <td>${cats}</td>
-        <td>
-          <button class='btn' onclick='editEvent(${ev.id})'>Modifier</button>
-          <button class='btn btn-danger' onclick='deleteEvent(${ev.id})'>Supprimer</button>
+      tbody.innerHTML += `<tr class="hover:bg-gray-50 transition">
+        <td class="px-6 py-4">${ev.name}</td>
+        <td class="px-6 py-4">${new Date(ev.date).toLocaleString()}</td>
+        <td class="px-6 py-4">${ev.organizer}</td>
+        <td class="px-6 py-4">${ev.location}</td>
+        <td class="px-6 py-4">${cats}</td>
+        <td class="px-6 py-4 flex gap-2">
+          <button class='bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-1.5 rounded shadow-sm transition' onclick='editEvent(${ev.id})'>Modifier</button>
+          <button class='bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-1.5 rounded shadow-sm transition' onclick='deleteEvent(${ev.id})'>Supprimer</button>
         </td>
       </tr>`;
     });
@@ -221,6 +297,7 @@ function deleteEvent(id) {
 
 fetchEvents();
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="dashboard.js"></script>
 </body>
 </html>
