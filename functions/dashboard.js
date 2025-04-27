@@ -137,6 +137,89 @@ async function fetchDashboard() {
 window.addEventListener('DOMContentLoaded', () => {
   if (document.querySelector('#reservations-table')) fetchReservations();
   fetchDashboard();
+
+  // Export CSV réservations
+  const exportBtn = document.getElementById('export-csv-btn');
+  if(exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      const res = await fetch('/admin/reservations');
+      const rows = await res.json();
+      if(!rows.length) return alert('Aucune réservation à exporter');
+      const headers = ['Utilisateur','Téléphone','Événement','Catégorie','Quantité','Prix unitaire','Total','Date'];
+      const csv = [headers.join(',')].concat(
+        rows.map(rsv => [
+          rsv.user,
+          rsv.phone||'',
+          rsv.event_name,
+          rsv.category_name,
+          rsv.quantity,
+          rsv.unit_price,
+          rsv.total_price,
+          new Date(rsv.date).toLocaleString()
+        ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','))
+      ).join('\r\n');
+      const blob = new Blob([csv], {type: 'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const date = new Date().toISOString().slice(0,10);
+      a.href = url;
+      a.download = `reservations_${date}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 200);
+    });
+  }
+
+  // Export CSV QR Codes (tickets) PAR EVENEMENT ET CATEGORIE
+  function bindExportQRCsvBtns() {
+    document.querySelectorAll('.export-qrcsv-btn').forEach(btn => {
+      btn.onclick = async function() {
+        const event_id = btn.getAttribute('data-event-id');
+        const event_name = btn.getAttribute('data-event-name');
+        const category_name = btn.getAttribute('data-category-name');
+        let res, rows;
+        try {
+          res = await fetch(`/admin/tickets?event_id=${encodeURIComponent(event_id)}&category_name=${encodeURIComponent(category_name)}`);
+          rows = await res.json();
+        } catch(e) {
+          alert('L’export des codes QR nécessite une route /admin/tickets côté backend qui retourne la liste des tickets générés filtrables par event_id et category_name.');
+          return;
+        }
+        if(!rows || !rows.length) return alert('Aucun code QR/ticket à exporter pour cette catégorie.');
+        const headers = ['Événement','Catégorie','Code','Statut','Utilisateur','Téléphone','Date de réservation'];
+        const csv = [headers.join(',')].concat(
+          rows.map(t => [
+            t.event_name,
+            t.category_name,
+            t.code,
+            t.status||'',
+            t.user||'',
+            t.phone||'',
+            t.date ? new Date(t.date).toLocaleString() : ''
+          ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','))
+        ).join('\r\n');
+        const blob = new Blob([csv], {type: 'text/csv'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const date = new Date().toISOString().slice(0,10);
+        a.href = url;
+        a.download = `qrcodes_${event_name}_${category_name}_${date}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(()=>{
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 200);
+      }
+    });
+  }
+  // Appeler ce binding après chaque render du tableau events
+  window.bindExportQRCsvBtns = bindExportQRCsvBtns;
+  // Pour le premier affichage (si events déjà présents)
+  bindExportQRCsvBtns();
 });
 
 

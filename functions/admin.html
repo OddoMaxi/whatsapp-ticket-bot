@@ -122,7 +122,10 @@
           </div>
         </form>
       </div>
-      <h2 class="text-lg font-semibold mb-2">Liste des événements</h2>
+      <div class="flex items-center justify-between mb-2">
+  <h2 class="text-lg font-semibold">Liste des événements</h2>
+  <button id="export-qrcsv-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded shadow-sm transition">Exporter QR Codes CSV</button>
+</div>
       <div class="overflow-x-auto rounded-lg shadow">
         <table id="events-table" class="min-w-full bg-white rounded-lg shadow text-sm">
   <thead class="bg-red-600 text-white">
@@ -142,7 +145,10 @@
 
     <!-- Reservations Section -->
     <div id="section-reservations" class="hidden">
-      <h2 class="text-lg font-semibold mb-2">Liste des réservations</h2>
+      <div class="flex items-center justify-between mb-2">
+  <h2 class="text-lg font-semibold">Liste des réservations</h2>
+  <button id="export-csv-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded shadow-sm transition">Exporter CSV</button>
+</div>
       <div class="overflow-x-auto rounded-lg shadow">
         <table id="reservations-table" class="min-w-full bg-white rounded-lg shadow text-sm">
   <thead class="bg-red-600 text-white">
@@ -217,9 +223,10 @@ function fetchEvents() {
         <td class="px-6 py-4">${ev.location}</td>
         <td class="px-6 py-4">${cats}</td>
         <td class="px-6 py-4 flex gap-2">
-          <button class='bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-1.5 rounded shadow-sm transition' onclick='editEvent(${ev.id})'>Modifier</button>
-          <button class='bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-1.5 rounded shadow-sm transition' onclick='deleteEvent(${ev.id})'>Supprimer</button>
-        </td>
+  <button class='bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-1.5 rounded shadow-sm transition' onclick='editEvent(${ev.id})'>Modifier</button>
+  <button class='bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-1.5 rounded shadow-sm transition' onclick='deleteEvent(${ev.id})'>Supprimer</button>
+  ${(ev.categories||[]).map(cat => `<button class="bg-green-600 hover:bg-green-700 text-white font-semibold px-3 py-1 rounded shadow-sm transition export-qrcsv-btn" data-event-id="${ev.id}" data-event-name="${ev.name}" data-category-name="${cat.name}">Exporter QR CSV (${cat.name})</button>`).join('')}
+</td>
       </tr>`;
     });
   });
@@ -299,5 +306,22 @@ fetchEvents();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="dashboard.js"></script>
+<script>
+// Déconnexion automatique après 5 minutes d'inactivité
+(function() {
+  let timeout;
+  function resetTimer() {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      alert('Session expirée, veuillez vous reconnecter.');
+      window.location.href = '/admin/logout';
+    }, 300000); // 5 min
+  }
+  ['click','keydown','scroll','mousemove','touchstart'].forEach(evt => {
+    window.addEventListener(evt, resetTimer, true);
+  });
+  resetTimer();
+})();
+</script>
 </body>
 </html>
