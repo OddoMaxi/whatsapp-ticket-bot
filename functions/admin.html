@@ -124,7 +124,76 @@
       </div>
       <div class="flex items-center justify-between mb-2">
   <h2 class="text-lg font-semibold">Liste des événements</h2>
+</div>
+<div class="flex justify-end mb-2">
   <button id="export-qrcsv-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded shadow-sm transition">Exporter QR Codes CSV</button>
+<div id="toast-container" style="position:fixed;top:1.5rem;right:1.5rem;z-index:9999;min-width:220px;pointer-events:none;"></div>
+<script>
+function showAlert(message, type='info') {
+  // type: 'info', 'success', 'error', 'warning'
+  const colors = {
+    info:   'bg-blue-100 border-blue-400 text-blue-800',
+    success:'bg-green-100 border-green-400 text-green-800',
+    error:  'bg-red-100 border-red-400 text-red-800',
+    warning:'bg-yellow-100 border-yellow-400 text-yellow-800'
+  };
+  const icon = {
+    info:   'ℹ️',
+    success:'✅',
+    error:  '❌',
+    warning:'⚠️'
+  };
+  const toast = document.createElement('div');
+  toast.className = `custom-toast border-l-4 shadow-lg p-4 mb-2 rounded ${colors[type]||colors.info}`;
+  toast.innerHTML = `<div class='flex items-center gap-2'><span class='text-xl'>${icon[type]||icon.info}</span><span>${message}</span></div>`;
+  document.getElementById('toast-container').appendChild(toast);
+  setTimeout(()=>{
+    toast.style.opacity = 0;
+    toast.style.transform = 'translateY(-10px)';
+    setTimeout(()=>toast.remove(), 300);
+  }, 3200);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const btn = document.getElementById('export-qrcsv-btn');
+  if(btn) {
+    btn.addEventListener('click', async function() {
+      try {
+        const res = await fetch('/admin/tickets');
+        const rows = await res.json();
+        if(!rows || !rows.length) return showAlert('Aucun ticket/QR à exporter.','warning');
+        const headers = ['Événement','Catégorie','Code','Statut','Utilisateur','Téléphone','Date de réservation'];
+        const csv = [headers.join(',')].concat(
+          rows.map(t => [
+            t.event_name,
+            t.category_name,
+            t.code,
+            t.status||'',
+            t.user||'',
+            t.phone||'',
+            t.date ? new Date(t.date).toLocaleString() : ''
+          ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','))
+        ).join('\r\n');
+        const blob = new Blob([csv], {type: 'text/csv'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const date = new Date().toISOString().slice(0,10);
+        a.href = url;
+        a.download = `qrcodes_all_${date}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(()=>{
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 200);
+        showAlert('Export CSV QR codes réussi !','success');
+      } catch(e) {
+        showAlert('Erreur lors de l\'export des QR codes.','error');
+      }
+    });
+  }
+});
+</script>
 </div>
       <div class="overflow-x-auto rounded-lg shadow">
         <table id="events-table" class="min-w-full bg-white rounded-lg shadow text-sm">
@@ -229,6 +298,7 @@ function fetchEvents() {
 </td>
       </tr>`;
     });
+    if (window.bindExportQRCsvBtns) window.bindExportQRCsvBtns();
   });
 }
 

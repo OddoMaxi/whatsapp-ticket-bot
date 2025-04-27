@@ -144,7 +144,7 @@ window.addEventListener('DOMContentLoaded', () => {
     exportBtn.addEventListener('click', async () => {
       const res = await fetch('/admin/reservations');
       const rows = await res.json();
-      if(!rows.length) return alert('Aucune réservation à exporter');
+      if(!rows.length) return showAlert('Aucune réservation à exporter','warning');
       const headers = ['Utilisateur','Téléphone','Événement','Catégorie','Quantité','Prix unitaire','Total','Date'];
       const csv = [headers.join(',')].concat(
         rows.map(rsv => [
@@ -185,10 +185,10 @@ window.addEventListener('DOMContentLoaded', () => {
           res = await fetch(`/admin/tickets?event_id=${encodeURIComponent(event_id)}&category_name=${encodeURIComponent(category_name)}`);
           rows = await res.json();
         } catch(e) {
-          alert('L’export des codes QR nécessite une route /admin/tickets côté backend qui retourne la liste des tickets générés filtrables par event_id et category_name.');
+          showAlert('L’export des codes QR nécessite une route /admin/tickets côté backend qui retourne la liste des tickets générés filtrables par event_id et category_name.','error');
           return;
         }
-        if(!rows || !rows.length) return alert('Aucun code QR/ticket à exporter pour cette catégorie.');
+        if(!rows || !rows.length) return showAlert('Aucun code QR/ticket à exporter pour cette catégorie.','warning');
         const headers = ['Événement','Catégorie','Code','Statut','Utilisateur','Téléphone','Date de réservation'];
         const csv = [headers.join(',')].concat(
           rows.map(t => [
