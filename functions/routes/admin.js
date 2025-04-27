@@ -43,10 +43,18 @@ router.get('/tickets', requireAuth, (req, res) => {
     params.push(category_name);
   }
   sql += ' ORDER BY r.date DESC';
+  // Ajout des logs pour debug
+  console.log('--- [EXPORT QR CSV] ---');
+  console.log('event_id:', event_id);
+  console.log('category_name:', category_name);
+  console.log('SQL:', sql);
+  console.log('Params:', params);
   try {
     const rows = db.prepare(sql).all(...params);
+    console.log('Nombre de tickets trouvés:', rows.length);
     res.json(rows);
   } catch (e) {
+    console.error('Erreur lors de la récupération des tickets:', e);
     res.status(500).json({ error: 'Erreur lors de la récupération des tickets', details: e.message });
   }
 });
