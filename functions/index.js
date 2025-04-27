@@ -67,7 +67,7 @@ const fs = require('fs');
 if (!fs.existsSync(path.dirname(DB_FILE))) {
   fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 }
-const db = new Database(DB_FILE); // Connexion à la base
+const db = new Database(__dirname + '/data.sqlite'); // Connexion à la base
 
 db.pragma('journal_mode = WAL'); // Mode WAL pour éviter les corruptions
 
