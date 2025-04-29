@@ -145,7 +145,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/admin/reservations');
       const rows = await res.json();
       if(!rows.length) return showAlert('Aucune réservation à exporter','warning');
-      const headers = ['Utilisateur','Téléphone','Événement','Catégorie','Quantité','Prix unitaire','Total','Date'];
+      const headers = ['Utilisateur','Téléphone','Événement','Catégorie','Quantité','Prix unitaire','Total','Date','Code'];
       const csv = [headers.join(',')].concat(
         rows.map(rsv => [
           rsv.user,
@@ -155,7 +155,8 @@ window.addEventListener('DOMContentLoaded', () => {
           rsv.quantity,
           rsv.unit_price,
           rsv.total_price,
-          new Date(rsv.date).toLocaleString()
+          new Date(rsv.date).toLocaleString(),
+          rsv.code||''
         ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','))
       ).join('\r\n');
       const blob = new Blob([csv], {type: 'text/csv'});
