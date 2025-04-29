@@ -1,23 +1,82 @@
 // Tableau de bord et réservations pour l'admin (chargé via <script> dans admin.html)
 
-function fetchReservations() {
-  fetch('/admin/reservations').then(r => r.json()).then(rows => {
-    const tbody = document.querySelector('#reservations-table tbody');
-    tbody.innerHTML = '';
-    rows.forEach(rsv => {
-      tbody.innerHTML += `<tr>
-        <td>${rsv.user}</td>
-        <td>${rsv.phone || ''}</td>
-        <td>${rsv.event_name}</td>
-        <td>${rsv.category_name}</td>
-        <td>${rsv.quantity}</td>
-        <td>${rsv.unit_price} F</td>
-        <td>${rsv.total_price} F</td>
-        <td>${new Date(rsv.date).toLocaleString()}</td>
-      </tr>`;
-    });
+let allReservations = [];
+let allEvents = [];
+
+function renderReservationsTable(filteredRows) {
+  const tbody = document.querySelector('#reservations-table tbody');
+  tbody.innerHTML = '';
+  filteredRows.forEach(rsv => {
+    tbody.innerHTML += `<tr>
+      <td>${rsv.user}</td>
+      <td>${rsv.phone || ''}</td>
+      <td>${rsv.event_name}</td>
+      <td>${rsv.category_name}</td>
+      <td>${rsv.quantity}</td>
+      <td>${rsv.unit_price} F</td>
+      <td>${rsv.total_price} F</td>
+      <td>${new Date(rsv.date).toLocaleString()}</td>
+    </tr>`;
   });
 }
+
+function applyReservationFilters() {
+  const eventVal = document.getElementById('filter-event').value;
+  const catVal = document.getElementById('filter-category').value;
+  const dateVal = document.getElementById('filter-date').value;
+  let filtered = allReservations;
+  if (eventVal) filtered = filtered.filter(r => String(r.event_id) === String(eventVal));
+  if (catVal) filtered = filtered.filter(r => r.category_name === catVal);
+  if (dateVal) filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
+  renderReservationsTable(filtered);
+}
+
+function populateEventAndCategoryFilters() {
+  const eventSelect = document.getElementById('filter-event');
+  const catSelect = document.getElementById('filter-category');
+  // Remplir événements
+  eventSelect.innerHTML = '<option value="">Tous les événements</option>' +
+    allEvents.map(ev => `<option value="${ev.id}">${ev.name}</option>`).join('');
+  // Remplir catégories selon événement sélectionné
+  const selectedEventId = eventSelect.value;
+  let cats = [];
+  if (selectedEventId) {
+    const ev = allEvents.find(e => String(e.id) === String(selectedEventId));
+    if (ev && ev.categories) cats = ev.categories.map(c => c.name);
+  } else {
+    // Toutes les catégories uniques
+    cats = [...new Set(allEvents.flatMap(ev => ev.categories.map(c => c.name)))];
+  }
+  catSelect.innerHTML = '<option value="">Toutes les catégories</option>' + cats.map(name => `<option value="${name}">${name}</option>`).join('');
+}
+
+function fetchReservations() {
+  Promise.all([
+    fetch('/admin/reservations').then(r => r.json()),
+    fetch('/admin/dashboard').then(r => r.json())
+  ]).then(([reservations, events]) => {
+    allReservations = reservations;
+    allEvents = events.map(ev => ({ ...ev, categories: ev.categories || [] }));
+    populateEventAndCategoryFilters();
+    applyReservationFilters();
+  });
+}
+
+// Bind filters
+window.addEventListener('DOMContentLoaded', () => {
+  if (document.getElementById('filter-event')) {
+    document.getElementById('filter-event').addEventListener('change', () => {
+      populateEventAndCategoryFilters();
+      applyReservationFilters();
+    });
+  }
+  if (document.getElementById('filter-category')) {
+    document.getElementById('filter-category').addEventListener('change', applyReservationFilters);
+  }
+  if (document.getElementById('filter-date')) {
+    document.getElementById('filter-date').addEventListener('change', applyReservationFilters);
+  }
+});
 
 async function fetchDashboard() {
   // 1. Données événements et catégories
@@ -142,12 +201,18 @@ window.addEventListener('DOMContentLoaded', () => {
   const exportBtn = document.getElementById('export-csv-btn');
   if(exportBtn) {
     exportBtn.addEventListener('click', async () => {
-      const res = await fetch('/admin/reservations');
-      const rows = await res.json();
-      if(!rows.length) return showAlert('Aucune réservation à exporter','warning');
+      // Exporte seulement les réservations filtrées actuellement affichées
+      const eventVal = document.getElementById('filter-event').value;
+      const catVal = document.getElementById('filter-category').value;
+      const dateVal = document.getElementById('filter-date').value;
+      let filtered = allReservations;
+      if (eventVal) filtered = filtered.filter(r => String(r.event_id) === String(eventVal));
+      if (catVal) filtered = filtered.filter(r => r.category_name === catVal);
+      if (dateVal) filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
+      if(!filtered.length) return showAlert('Aucune réservation à exporter','warning');
       const headers = ['Utilisateur','Téléphone','Événement','Catégorie','Quantité','Prix unitaire','Total','Date','Code'];
       const csv = [headers.join(',')].concat(
-        rows.map(rsv => [
+        filtered.map(rsv => [
           rsv.user,
           rsv.phone||'',
           rsv.event_name,
