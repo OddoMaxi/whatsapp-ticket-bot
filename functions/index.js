@@ -252,6 +252,16 @@ app.get('/admin/login', (req, res) => {
 app.post('/admin/login', handleLogin);
 app.get('/admin/logout', handleLogout);
 
+// --- Webhook WhatsApp Cloud API (Meta) ---
+app.get('/webhook', (req, res) => {
+  if (req.query['hub.verify_token'] === process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
+    res.send(req.query['hub.challenge']);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+
 // --- API REST admin ---
 
 // Liste des réservations
