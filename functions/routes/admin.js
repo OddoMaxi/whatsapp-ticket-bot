@@ -37,6 +37,7 @@ router.get('/tickets', requireAuth, (req, res) => {
     tableExists = !!tableCheck;
   } catch (e) {
     console.error('Erreur lors de la vérification de la table reservations:', e);
+    return res.status(500).json({ error: 'Erreur lors de la vérification de la table', details: e.message });
   }
   
   // Si la table n'existe pas, retourner un tableau vide
@@ -45,50 +46,66 @@ router.get('/tickets', requireAuth, (req, res) => {
     return res.json([]);
   }
   
-  // Vérifier si la colonne 'code' existe dans la table reservations
-  let codeColumnExists = false;
   try {
-    const tableInfo = db.prepare("PRAGMA table_info(reservations)").all();
-    codeColumnExists = tableInfo.some(col => col.name === 'code');
-  } catch (e) {
-    console.error('Erreur lors de la vérification de la colonne code:', e);
-  }
-  
-  // Construire la requête SQL pour récupérer tous les champs nécessaires
-  // Utiliser une requête qui fonctionne même si certaines colonnes n'existent pas
-  const sql = `SELECT 
-    r.id, r.event_id, e.name as event_name, r.category_name, 
-    r.status, r.user, r.phone, r.date,
-    CASE 
-      WHEN r.code IS NOT NULL THEN r.code
-      WHEN r.formatted_id IS NOT NULL THEN r.formatted_id 
-      WHEN r.qr_code IS NOT NULL THEN r.qr_code
-      ELSE 'TICKET-' || r.event_id || '-' || r.id
-    END as code,
-    r.formatted_id, r.qr_code
-  FROM reservations r
-  LEFT JOIN events e ON r.event_id = e.id
-  WHERE 1=1`;
-  
-  const params = [];
-  if (event_id) {
-    sql += ' AND r.event_id = ?';
-    params.push(event_id);
-  }
-  if (category_name) {
-    sql += ' AND r.category_name = ?';
-    params.push(category_name);
-  }
-  sql += ' ORDER BY r.date DESC';
-  
-  // Ajout des logs pour debug
-  console.log('--- [EXPORT QR CSV] ---');
-  console.log('event_id:', event_id);
-  console.log('category_name:', category_name);
-  console.log('SQL:', sql);
-  console.log('Params:', params);
-  
-  try {
+    // Vérifier les colonnes existantes dans la table reservations
+    const columnInfo = db.prepare("PRAGMA table_info(reservations)").all();
+    const columns = columnInfo.map(col => col.name);
+    console.log('Colonnes existantes dans la table reservations:', columns);
+    
+    // Construire une requête SQL dynamique basée sur les colonnes existantes
+    let selectColumns = ['r.id', 'r.event_id', 'e.name as event_name'];
+    
+    // Ajouter les colonnes si elles existent
+    if (columns.includes('category_name')) selectColumns.push('r.category_name');
+    else selectColumns.push("'' as category_name");
+    
+    if (columns.includes('user')) selectColumns.push('r.user');
+    else selectColumns.push("'Utilisateur' as user");
+    
+    if (columns.includes('phone')) selectColumns.push('r.phone');
+    else selectColumns.push("'' as phone");
+    
+    if (columns.includes('date')) selectColumns.push('r.date');
+    else selectColumns.push("CURRENT_TIMESTAMP as date");
+    
+    // Construire la partie CASE pour le code QR
+    let codeCase = "CASE ";
+    if (columns.includes('code')) codeCase += "WHEN r.code IS NOT NULL THEN r.code ";
+    if (columns.includes('formatted_id')) codeCase += "WHEN r.formatted_id IS NOT NULL THEN r.formatted_id ";
+    if (columns.includes('qr_code')) codeCase += "WHEN r.qr_code IS NOT NULL THEN r.qr_code ";
+    codeCase += "ELSE 'TICKET-' || r.event_id || '-' || r.id END as code";
+    
+    selectColumns.push(codeCase);
+    
+    // Ajouter les colonnes optionnelles pour l'export
+    if (columns.includes('formatted_id')) selectColumns.push('r.formatted_id');
+    if (columns.includes('qr_code')) selectColumns.push('r.qr_code');
+    
+    // Construire la requête SQL complète
+    let sql = `SELECT ${selectColumns.join(', ')}
+    FROM reservations r
+    LEFT JOIN events e ON r.event_id = e.id
+    WHERE 1=1`;
+    
+    // Ajouter les filtres si nécessaire
+    const params = [];
+    if (event_id) {
+      sql += ' AND r.event_id = ?';
+      params.push(event_id);
+    }
+    if (category_name) {
+      sql += ' AND r.category_name = ?';
+      params.push(category_name);
+    }
+    sql += ' ORDER BY r.date DESC';
+    
+    // Ajout des logs pour debug
+    console.log('--- [EXPORT QR CSV] ---');
+    console.log('event_id:', event_id);
+    console.log('category_name:', category_name);
+    console.log('SQL:', sql);
+    console.log('Params:', params);
+    
     const rows = db.prepare(sql).all(...params);
     console.log('Nombre de tickets trouvés:', rows.length);
     
@@ -161,6 +178,7 @@ router.get('/reservations', requireAuth, (req, res) => {
     tableExists = !!tableCheck;
   } catch (e) {
     console.error('Erreur lors de la vérification de la table reservations:', e);
+    return res.status(500).json({ error: 'Erreur lors de la vérification de la table', details: e.message });
   }
   
   // Si la table n'existe pas, retourner un tableau vide
@@ -170,19 +188,52 @@ router.get('/reservations', requireAuth, (req, res) => {
   }
   
   try {
-    // Construire une requête SQL robuste qui fonctionne même si certaines colonnes n'existent pas
-    const sql = `SELECT 
-      r.id, r.event_id, e.name as event_name, r.category_name, 
-      r.quantity, r.unit_price, r.total_price, r.status, r.user, r.phone, r.date,
-      CASE 
-        WHEN r.qr_code IS NOT NULL THEN r.qr_code
-        WHEN r.code IS NOT NULL THEN r.code
-        WHEN r.formatted_id IS NOT NULL THEN r.formatted_id
-        ELSE 'TICKET-' || r.event_id || '-' || r.id
-      END as qr_code
+    // Vérifier les colonnes existantes dans la table reservations
+    const columnInfo = db.prepare("PRAGMA table_info(reservations)").all();
+    const columns = columnInfo.map(col => col.name);
+    console.log('Colonnes existantes dans la table reservations:', columns);
+    
+    // Construire une requête SQL dynamique basée sur les colonnes existantes
+    let selectColumns = ['r.id', 'r.event_id', 'e.name as event_name'];
+    
+    // Ajouter les colonnes si elles existent
+    if (columns.includes('category_name')) selectColumns.push('r.category_name');
+    else selectColumns.push("'' as category_name");
+    
+    if (columns.includes('quantity')) selectColumns.push('r.quantity');
+    else selectColumns.push("1 as quantity");
+    
+    if (columns.includes('unit_price')) selectColumns.push('r.unit_price');
+    else selectColumns.push("0 as unit_price");
+    
+    if (columns.includes('total_price')) selectColumns.push('r.total_price');
+    else selectColumns.push("0 as total_price");
+    
+    if (columns.includes('user')) selectColumns.push('r.user');
+    else selectColumns.push("'Utilisateur' as user");
+    
+    if (columns.includes('phone')) selectColumns.push('r.phone');
+    else selectColumns.push("'' as phone");
+    
+    if (columns.includes('date')) selectColumns.push('r.date');
+    else selectColumns.push("CURRENT_TIMESTAMP as date");
+    
+    // Construire la partie CASE pour le code QR
+    let qrCodeCase = "CASE ";
+    if (columns.includes('qr_code')) qrCodeCase += "WHEN r.qr_code IS NOT NULL THEN r.qr_code ";
+    if (columns.includes('code')) qrCodeCase += "WHEN r.code IS NOT NULL THEN r.code ";
+    if (columns.includes('formatted_id')) qrCodeCase += "WHEN r.formatted_id IS NOT NULL THEN r.formatted_id ";
+    qrCodeCase += "ELSE 'TICKET-' || r.event_id || '-' || r.id END as qr_code";
+    
+    selectColumns.push(qrCodeCase);
+    
+    // Construire la requête SQL complète
+    const sql = `SELECT ${selectColumns.join(', ')}
     FROM reservations r
     LEFT JOIN events e ON r.event_id = e.id
     ORDER BY r.date DESC`;
+    
+    console.log('Requête SQL générée:', sql);
     
     const rows = db.prepare(sql).all();
     console.log(`Récupération de ${rows.length} réservations pour l'affichage dans le tableau`);
