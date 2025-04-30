@@ -1,7 +1,8 @@
 const express = require('express');
 const path = require('path');
 const { requireAuth, handleLogin, handleLogout } = require('../auth');
-const { db } = require('../db');
+const Database = require('better-sqlite3');
+const db = new Database(path.join(__dirname, '../data.sqlite'));
 
 const router = express.Router();
 
