@@ -3,34 +3,6 @@
 let allReservations = [];
 let allEvents = [];
 
-function renderReservationsTable(filteredRows) {
-  const tbody = document.querySelector('#reservations-table tbody');
-  tbody.innerHTML = '';
-  filteredRows.forEach(rsv => {
-    tbody.innerHTML += `<tr>
-      <td>${rsv.user}</td>
-      <td>${rsv.phone || ''}</td>
-      <td>${rsv.event_name}</td>
-      <td>${rsv.category_name}</td>
-      <td>${rsv.quantity}</td>
-      <td>${rsv.unit_price} F</td>
-      <td>${rsv.total_price} F</td>
-      <td>${new Date(rsv.date).toLocaleString()}</td>
-    </tr>`;
-  });
-}
-
-function applyReservationFilters() {
-  const eventVal = document.getElementById('filter-event').value;
-  const catVal = document.getElementById('filter-category').value;
-  const dateVal = document.getElementById('filter-date').value;
-  let filtered = allReservations;
-  if (eventVal) filtered = filtered.filter(r => String(r.event_id) === String(eventVal));
-  if (catVal) filtered = filtered.filter(r => r.category_name === catVal);
-  if (dateVal) filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
-  renderReservationsTable(filtered);
-}
-
 function populateEventAndCategoryFilters() {
   const eventSelect = document.getElementById('filter-event');
   const catSelect = document.getElementById('filter-category');
@@ -48,6 +20,34 @@ function populateEventAndCategoryFilters() {
     cats = [...new Set(allEvents.flatMap(ev => ev.categories.map(c => c.name)))];
   }
   catSelect.innerHTML = '<option value="">Toutes les catégories</option>' + cats.map(name => `<option value="${name}">${name}</option>`).join('');
+}
+
+function applyReservationFilters() {
+  const eventVal = document.getElementById('filter-event').value;
+  const catVal = document.getElementById('filter-category').value;
+  const dateVal = document.getElementById('filter-date').value;
+  let filtered = allReservations;
+  if (eventVal) filtered = filtered.filter(r => String(r.event_id) === String(eventVal));
+  if (catVal) filtered = filtered.filter(r => r.category_name === catVal);
+  if (dateVal) filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
+  renderReservationsTable(filtered);
+}
+
+function renderReservationsTable(filteredRows) {
+  const tbody = document.querySelector('#reservations-table tbody');
+  tbody.innerHTML = '';
+  filteredRows.forEach(rsv => {
+    tbody.innerHTML += `<tr>
+      <td>${rsv.user}</td>
+      <td>${rsv.phone || ''}</td>
+      <td>${rsv.event_name}</td>
+      <td>${rsv.category_name}</td>
+      <td>${rsv.quantity}</td>
+      <td>${rsv.unit_price} F</td>
+      <td>${rsv.total_price} F</td>
+      <td>${new Date(rsv.date).toLocaleString()}</td>
+    </tr>`;
+  });
 }
 
 function fetchReservations() {
@@ -100,7 +100,7 @@ async function fetchDashboard() {
   });
 
   // ----- Performance (bar chart) -----
-  const perfLabels = events.map(ev => ev.event_name);
+  const perfLabels = events.map(ev => ev.name);
   const perfData = events.map(ev => ev.categories.reduce((sum, cat) => sum + (cat.sold || 0), 0));
   const ctxPerf = document.getElementById('performance-chart').getContext('2d');
   if(window.performanceChart) window.performanceChart.destroy();
@@ -251,21 +251,26 @@ window.addEventListener('DOMContentLoaded', () => {
           res = await fetch(`/admin/tickets?event_id=${encodeURIComponent(event_id)}&category_name=${encodeURIComponent(category_name)}`);
           rows = await res.json();
         } catch(e) {
-          showAlert('L’export des codes QR nécessite une route /admin/tickets côté backend qui retourne la liste des tickets générés filtrables par event_id et category_name.','error');
+          showAlert('L'export des codes QR nécessite une route /admin/tickets côté backend qui retourne la liste des tickets générés filtrables par event_id et category_name.','error');
           return;
         }
         if(!rows || !rows.length) return showAlert('Aucun code QR/ticket à exporter pour cette catégorie.','warning');
         const headers = ['Événement','Catégorie','Code','Statut','Utilisateur','Téléphone','Date de réservation'];
         const csv = [headers.join(',')].concat(
-          rows.map(t => [
-            t.event_name,
-            t.category_name,
-            t.code,
-            t.status||'',
-            t.user||'',
-            t.phone||'',
-            t.date ? new Date(t.date).toLocaleString() : ''
-          ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','))
+          rows.map(t => {
+            // Garantir que le code est toujours présent
+            const code = t.code || t.formatted_id || t.qr_code || `TICKET-${t.event_id}`;
+            
+            return [
+              t.event_name,
+              t.category_name,
+              code, // Utiliser le code garanti
+              t.status||'',
+              t.user||'',
+              t.phone||'',
+              t.date ? new Date(t.date).toLocaleString() : ''
+            ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',');
+          })
         ).join('\r\n');
         const blob = new Blob([csv], {type: 'text/csv'});
         const url = URL.createObjectURL(blob);
