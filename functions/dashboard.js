@@ -31,30 +31,22 @@ function applyReservationFilters() {
   console.log('- Event ID sélectionné:', eventVal);
   console.log('- Catégorie sélectionnée:', catVal);
   console.log('- Date sélectionnée:', dateVal);
-  console.log('- Nombre total de réservations:', allReservations.length);
   
-  let filtered = allReservations;
+  // Créer un objet de filtres pour la requête
+  const filters = {};
+  if (eventVal) filters.event_id = eventVal;
+  if (catVal) filters.category_name = catVal;
+  if (dateVal) filters.date = dateVal;
   
-  if (eventVal) {
-    filtered = filtered.filter(r => {
-      const match = String(r.event_id) === String(eventVal);
-      console.log(`Réservation ID ${r.id}: event_id=${r.event_id}, match=${match}`);
-      return match;
-    });
-    console.log(`Après filtre événement: ${filtered.length} réservations`);
+  // Si au moins un filtre est actif, récupérer les réservations filtrées du serveur
+  if (Object.keys(filters).length > 0) {
+    console.log('Récupération des réservations avec filtres:', filters);
+    fetchReservations(filters);
+  } else {
+    // Sinon, filtrer localement
+    console.log('Filtrage local des réservations');
+    renderReservationsTable(allReservations);
   }
-  
-  if (catVal) {
-    filtered = filtered.filter(r => r.category_name === catVal);
-    console.log(`Après filtre catégorie: ${filtered.length} réservations`);
-  }
-  
-  if (dateVal) {
-    filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
-    console.log(`Après filtre date: ${filtered.length} réservations`);
-  }
-  
-  renderReservationsTable(filtered);
 }
 
 function renderReservationsTable(filteredRows) {
@@ -82,9 +74,24 @@ function renderReservationsTable(filteredRows) {
   });
 }
 
-function fetchReservations() {
+// Fonction pour récupérer les réservations avec filtres optionnels
+function fetchReservations(filters = {}) {
+  // Construire l'URL avec les paramètres de filtrage
+  let reservationsUrl = '/admin/reservations';
+  const queryParams = [];
+  
+  if (filters.event_id) queryParams.push(`event_id=${filters.event_id}`);
+  if (filters.category_name) queryParams.push(`category_name=${encodeURIComponent(filters.category_name)}`);
+  if (filters.date) queryParams.push(`date=${filters.date}`);
+  
+  if (queryParams.length > 0) {
+    reservationsUrl += '?' + queryParams.join('&');
+  }
+  
+  console.log('Fetching reservations with URL:', reservationsUrl);
+  
   Promise.all([
-    fetch('/admin/reservations').then(r => r.json()).catch(err => {
+    fetch(reservationsUrl).then(r => r.json()).catch(err => {
       console.error('Erreur lors de la récupération des réservations:', err);
       return []; // Retourner un tableau vide en cas d'erreur
     }),

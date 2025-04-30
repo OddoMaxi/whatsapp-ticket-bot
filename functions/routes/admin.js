@@ -171,6 +171,9 @@ router.get('/dashboard', requireAuth, (req, res) => {
 
 // Route pour récupérer les réservations pour l'affichage dans le tableau
 router.get('/reservations', requireAuth, (req, res) => {
+  // Récupérer les paramètres de filtrage
+  const { event_id, category_name, date } = req.query;
+  console.log('Paramètres de filtrage reçus:', { event_id, category_name, date });
   // Vérifier si la table reservations existe
   let tableExists = false;
   try {
@@ -227,15 +230,38 @@ router.get('/reservations', requireAuth, (req, res) => {
     
     selectColumns.push(qrCodeCase);
     
-    // Construire la requête SQL complète
-    const sql = `SELECT ${selectColumns.join(', ')}
+    // Construire la requête SQL complète avec filtres
+    let sql = `SELECT ${selectColumns.join(', ')}
     FROM reservations r
     LEFT JOIN events e ON r.event_id = e.id
-    ORDER BY r.date DESC`;
+    WHERE 1=1`;
+    
+    // Ajouter les filtres si nécessaire
+    const params = [];
+    if (event_id) {
+      sql += ' AND r.event_id = ?';
+      params.push(event_id);
+      console.log(`Filtrage par événement: ${event_id}`);
+    }
+    if (category_name) {
+      sql += ' AND r.category_name = ?';
+      params.push(category_name);
+      console.log(`Filtrage par catégorie: ${category_name}`);
+    }
+    if (date) {
+      sql += " AND DATE(r.date) = DATE(?)";
+      params.push(date);
+      console.log(`Filtrage par date: ${date}`);
+    }
+    
+    // Ajouter l'ordre de tri
+    sql += ' ORDER BY r.date DESC';
     
     console.log('Requête SQL générée:', sql);
+    console.log('Paramètres SQL:', params);
     
-    const rows = db.prepare(sql).all();
+    // Exécuter la requête avec les paramètres
+    const rows = params.length > 0 ? db.prepare(sql).all(...params) : db.prepare(sql).all();
     console.log(`Récupération de ${rows.length} réservations pour l'affichage dans le tableau`);
     
     res.json(rows);
