@@ -510,7 +510,7 @@ app.post('/webhook', (req, res) => {
         catIdx: catIdxForId, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid
       });
     } else {
-      db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
+      db.prepare('UPDATE reservations SET formatted_id=?, qr_code=?, code=? WHERE id=?').run(formattedId, qrCode, formattedId, rsvInfo.lastInsertRowid);
       setTimeout(() => {
         try {
           generateAndSendTicket({
@@ -703,7 +703,7 @@ telegramBot.on('message', async (msg) => {
           do {
             qrCode = String(Math.floor(1000000 + Math.random() * 9000000));
           } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
-          db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
+          db.prepare('UPDATE reservations SET formatted_id=?, qr_code=?, code=? WHERE id=?').run(formattedId, qrCode, formattedId, rsvInfo.lastInsertRowid);
           setTimeout(() => {
             try {
               if (catIdx === undefined || formattedId === undefined || qrCode === undefined) {

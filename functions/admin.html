@@ -214,35 +214,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
     <!-- Reservations Section -->
     <div id="section-reservations" class="hidden">
-      <div class="flex items-center justify-between mb-2">
-        <h2 class="text-lg font-semibold">Liste des réservations</h2>
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+        <h2 class="text-lg font-semibold text-gray-800">Liste des réservations</h2>
         <button id="export-csv-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded shadow-sm transition">Exporter CSV</button>
       </div>
-      <div class="flex flex-wrap gap-4 mb-4">
-        <select id="filter-event" class="px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-red-500">
-          <option value="">Tous les événements</option>
-        </select>
-        <select id="filter-category" class="px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-red-500">
-          <option value="">Toutes les catégories</option>
-        </select>
-        <input id="filter-date" type="date" class="px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-red-500" />
+      <div class="flex flex-col md:flex-row flex-wrap gap-4 mb-6">
+        <div class="flex flex-col">
+          <label for="filter-event" class="sr-only">Filtrer par événement</label>
+          <select id="filter-event" class="px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-red-500 min-w-[180px]">
+            <option value="">Tous les événements</option>
+          </select>
+        </div>
+        <div class="flex flex-col">
+          <label for="filter-category" class="sr-only">Filtrer par catégorie</label>
+          <select id="filter-category" class="px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-red-500 min-w-[180px]">
+            <option value="">Toutes les catégories</option>
+          </select>
+        </div>
+        <div class="flex flex-col">
+          <label for="filter-date" class="sr-only">Filtrer par date</label>
+          <input id="filter-date" type="date" class="px-3 py-2 rounded border border-gray-300 focus:ring-2 focus:ring-red-500 min-w-[180px]" />
+        </div>
       </div>
-      <div class="overflow-x-auto rounded-lg shadow">
-        <table id="reservations-table" class="min-w-full bg-white rounded-lg shadow text-sm">
-  <thead class="bg-red-600 text-white">
-    <tr>
-      <th class="px-6 py-3 text-left font-semibold">Utilisateur</th>
-      <th class="px-6 py-3 text-left font-semibold">Téléphone</th>
-      <th class="px-6 py-3 text-left font-semibold">Événement</th>
-      <th class="px-6 py-3 text-left font-semibold">Catégorie</th>
-      <th class="px-6 py-3 text-left font-semibold">Quantité</th>
-      <th class="px-6 py-3 text-left font-semibold">Prix unitaire</th>
-      <th class="px-6 py-3 text-left font-semibold">Total</th>
-      <th class="px-6 py-3 text-left font-semibold">Date</th>
-    </tr>
-  </thead>
-  <tbody class="divide-y divide-gray-100"></tbody>
-</table>
+      <div class="overflow-x-auto rounded-lg shadow bg-white">
+        <table id="reservations-table" class="min-w-full bg-white rounded-lg text-sm">
+          <thead class="bg-red-600 text-white">
+            <tr>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Utilisateur</th>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Téléphone</th>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Événement</th>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Catégorie</th>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Quantité</th>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Prix unitaire</th>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Total</th>
+              <th class="px-4 py-3 text-left font-semibold whitespace-nowrap">Date</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
       </div>
     </div>
   </main>
