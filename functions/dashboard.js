@@ -26,10 +26,34 @@ function applyReservationFilters() {
   const eventVal = document.getElementById('filter-event').value;
   const catVal = document.getElementById('filter-category').value;
   const dateVal = document.getElementById('filter-date').value;
+  
+  console.log('Filtrage des réservations:');
+  console.log('- Event ID sélectionné:', eventVal);
+  console.log('- Catégorie sélectionnée:', catVal);
+  console.log('- Date sélectionnée:', dateVal);
+  console.log('- Nombre total de réservations:', allReservations.length);
+  
   let filtered = allReservations;
-  if (eventVal) filtered = filtered.filter(r => String(r.event_id) === String(eventVal));
-  if (catVal) filtered = filtered.filter(r => r.category_name === catVal);
-  if (dateVal) filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
+  
+  if (eventVal) {
+    filtered = filtered.filter(r => {
+      const match = String(r.event_id) === String(eventVal);
+      console.log(`Réservation ID ${r.id}: event_id=${r.event_id}, match=${match}`);
+      return match;
+    });
+    console.log(`Après filtre événement: ${filtered.length} réservations`);
+  }
+  
+  if (catVal) {
+    filtered = filtered.filter(r => r.category_name === catVal);
+    console.log(`Après filtre catégorie: ${filtered.length} réservations`);
+  }
+  
+  if (dateVal) {
+    filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
+    console.log(`Après filtre date: ${filtered.length} réservations`);
+  }
+  
   renderReservationsTable(filtered);
 }
 
@@ -232,19 +256,28 @@ window.addEventListener('DOMContentLoaded', () => {
       if (catVal) filtered = filtered.filter(r => r.category_name === catVal);
       if (dateVal) filtered = filtered.filter(r => r.date && new Date(r.date).toISOString().slice(0,10) === dateVal);
       if(!filtered.length) return showAlert('Aucune réservation à exporter','warning');
-      const headers = ['Utilisateur','Téléphone','Événement','Catégorie','Quantité','Prix unitaire','Total','Date','Code'];
+      // Ajouter des logs pour déboguer les valeurs des champs
+      console.log('Export CSV - Exemple de réservation:', filtered[0]);
+      
+      const headers = ['Utilisateur','Téléphone','Événement','Catégorie','Quantité','Prix unitaire','Total','Date','Code QR'];
       const csv = [headers.join(',')].concat(
-        filtered.map(rsv => [
-          rsv.user,
-          rsv.phone||'',
-          rsv.event_name,
-          rsv.category_name,
-          rsv.quantity,
-          rsv.unit_price,
-          rsv.total_price,
-          new Date(rsv.date).toLocaleString(),
-          rsv.code||''
-        ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','))
+        filtered.map(rsv => {
+          // Garantir que le code QR est toujours présent et non vide
+          const qrCode = rsv.qr_code || rsv.code || rsv.formatted_id || `TICKET-${rsv.event_id}-${rsv.id}`;
+          console.log(`Réservation ${rsv.id} - Code QR: ${qrCode}`);
+          
+          return [
+            rsv.user || '',
+            rsv.phone || '',
+            rsv.event_name || '',
+            rsv.category_name || '',
+            rsv.quantity || '1',
+            rsv.unit_price || '0',
+            rsv.total_price || '0',
+            rsv.date ? new Date(rsv.date).toLocaleString() : '',
+            qrCode
+          ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',');
+        })
       ).join('\r\n');
       const blob = new Blob([csv], {type: 'text/csv'});
       const url = URL.createObjectURL(blob);
