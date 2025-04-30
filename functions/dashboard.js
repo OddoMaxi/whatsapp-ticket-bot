@@ -264,13 +264,16 @@ window.addEventListener('DOMContentLoaded', () => {
         const headers = ['Événement','Catégorie','Code','Statut','Utilisateur','Téléphone','Date de réservation'];
         const csv = [headers.join(',')].concat(
           rows.map(t => {
-            // Garantir que le code est toujours présent
-            const code = t.code || t.formatted_id || t.qr_code || `TICKET-${t.event_id}`;
+            // Garantir que le code est toujours présent - préférer qr_code car c'est le code numérique
+            const qrCode = t.qr_code || t.code || t.formatted_id || `TICKET-${t.event_id}`;
+            
+            // Afficher les détails dans la console pour déboguer
+            console.log(`Ticket export - Event: ${t.event_name}, Category: ${t.category_name}, QR Code: ${qrCode}`);
             
             return [
               t.event_name,
               t.category_name,
-              code, // Utiliser le code garanti
+              qrCode, // Utiliser explicitement le code QR numérique
               t.status||'',
               t.user||'',
               t.phone||'',

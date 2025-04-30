@@ -54,19 +54,21 @@ router.get('/tickets', requireAuth, (req, res) => {
     console.error('Erreur lors de la vérification de la colonne code:', e);
   }
   
-  // Construire la requête SQL en fonction de l'existence de la colonne code
-  let sql;
-  if (codeColumnExists) {
-    sql = `SELECT r.event_id, e.name as event_name, r.category_name, r.code, r.formatted_id, r.qr_code, r.status, r.user, r.phone, r.date
-           FROM reservations r
-           LEFT JOIN events e ON r.event_id = e.id
-           WHERE 1=1`;
-  } else {
-    sql = `SELECT r.event_id, e.name as event_name, r.category_name, r.formatted_id as code, r.qr_code, r.status, r.user, r.phone, r.date
-           FROM reservations r
-           LEFT JOIN events e ON r.event_id = e.id
-           WHERE 1=1`;
-  }
+  // Construire la requête SQL pour récupérer tous les champs nécessaires
+  // Utiliser une requête qui fonctionne même si certaines colonnes n'existent pas
+  const sql = `SELECT 
+    r.id, r.event_id, e.name as event_name, r.category_name, 
+    r.status, r.user, r.phone, r.date,
+    CASE 
+      WHEN r.code IS NOT NULL THEN r.code
+      WHEN r.formatted_id IS NOT NULL THEN r.formatted_id 
+      WHEN r.qr_code IS NOT NULL THEN r.qr_code
+      ELSE 'TICKET-' || r.event_id || '-' || r.id
+    END as code,
+    r.formatted_id, r.qr_code
+  FROM reservations r
+  LEFT JOIN events e ON r.event_id = e.id
+  WHERE 1=1`;
   
   const params = [];
   if (event_id) {
@@ -90,11 +92,21 @@ router.get('/tickets', requireAuth, (req, res) => {
     const rows = db.prepare(sql).all(...params);
     console.log('Nombre de tickets trouvés:', rows.length);
     
+    // Ajouter des logs pour déboguer les valeurs des champs
+    if (rows.length > 0) {
+      console.log('Exemple de ticket:');
+      console.log('- ID:', rows[0].id);
+      console.log('- Code:', rows[0].code);
+      console.log('- FormattedID:', rows[0].formatted_id);
+      console.log('- QR Code:', rows[0].qr_code);
+    }
+    
     // Post-traitement pour garantir que le champ code est toujours rempli
     const processedRows = rows.map(row => {
-      // Si code est null ou vide, utiliser formatted_id ou qr_code comme fallback
-      if (!row.code) {
-        row.code = row.formatted_id || row.qr_code || `TICKET-${row.event_id}-${row.id}`;
+      // Garantir que le code est toujours présent et non vide
+      if (!row.code || row.code === 'null' || row.code === 'undefined') {
+        // Utiliser qr_code comme premier choix car c'est le code numérique généré pour le QR
+        row.code = row.qr_code || row.formatted_id || `TICKET-${row.event_id}-${row.id}`;
       }
       return row;
     });
