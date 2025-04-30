@@ -45,7 +45,6 @@ function renderReservationsTable(filteredRows) {
       <td>${rsv.quantity}</td>
       <td>${rsv.unit_price} F</td>
       <td>${rsv.total_price} F</td>
-      <td>${rsv.qr_code || ''}</td>
       <td>${new Date(rsv.date).toLocaleString()}</td>
     </tr>`;
   });
@@ -251,36 +250,22 @@ window.addEventListener('DOMContentLoaded', () => {
         try {
           res = await fetch(`/admin/tickets?event_id=${encodeURIComponent(event_id)}&category_name=${encodeURIComponent(category_name)}`);
           rows = await res.json();
-          
-          // Vérifier si la réponse est un tableau vide
-          if (!rows || !Array.isArray(rows) || rows.length === 0) {
-            showAlert('Aucun ticket trouvé pour cet événement et cette catégorie. La table des réservations est peut-être vide ou n\'existe pas encore.', 'warning');
-            return;
-          }
         } catch(e) {
-          console.error('Erreur lors de la récupération des tickets:', e);
-          showAlert('Erreur lors de la récupération des tickets. Vérifiez la console pour plus de détails.', 'error');
+          showAlert('L'export des codes QR nécessite une route /admin/tickets côté backend qui retourne la liste des tickets générés filtrables par event_id et category_name.','error');
           return;
         }
+        if(!rows || !rows.length) return showAlert('Aucun code QR/ticket à exporter pour cette catégorie.','warning');
         const headers = ['Événement','Catégorie','Code','Statut','Utilisateur','Téléphone','Date de réservation'];
         const csv = [headers.join(',')].concat(
-          rows.map(t => {
-            // Garantir que le code est toujours présent - préférer qr_code car c'est le code numérique
-            const qrCode = t.qr_code || t.code || t.formatted_id || `TICKET-${t.event_id}`;
-            
-            // Afficher les détails dans la console pour déboguer
-            console.log(`Ticket export - Event: ${t.event_name}, Category: ${t.category_name}, QR Code: ${qrCode}`);
-            
-            return [
-              t.event_name,
-              t.category_name,
-              qrCode, // Utiliser explicitement le code QR numérique
-              t.status||'',
-              t.user||'',
-              t.phone||'',
-              t.date ? new Date(t.date).toLocaleString() : ''
-            ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',');
-          })
+          rows.map(t => [
+            t.event_name,
+            t.category_name,
+            t.code,
+            t.status||'',
+            t.user||'',
+            t.phone||'',
+            t.date ? new Date(t.date).toLocaleString() : ''
+          ].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','))
         ).join('\r\n');
         const blob = new Blob([csv], {type: 'text/csv'});
         const url = URL.createObjectURL(blob);

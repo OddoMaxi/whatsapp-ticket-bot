@@ -118,4 +118,46 @@ router.get('/tickets', requireAuth, (req, res) => {
   }
 });
 
+// Route pour récupérer les réservations pour l'affichage dans le tableau
+router.get('/reservations', requireAuth, (req, res) => {
+  // Vérifier si la table reservations existe
+  let tableExists = false;
+  try {
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='reservations'").get();
+    tableExists = !!tableCheck;
+  } catch (e) {
+    console.error('Erreur lors de la vérification de la table reservations:', e);
+  }
+  
+  // Si la table n'existe pas, retourner un tableau vide
+  if (!tableExists) {
+    console.log('La table reservations n\'existe pas encore');
+    return res.json([]);
+  }
+  
+  try {
+    // Construire une requête SQL robuste qui fonctionne même si certaines colonnes n'existent pas
+    const sql = `SELECT 
+      r.id, r.event_id, e.name as event_name, r.category_name, 
+      r.quantity, r.unit_price, r.total_price, r.status, r.user, r.phone, r.date,
+      CASE 
+        WHEN r.qr_code IS NOT NULL THEN r.qr_code
+        WHEN r.code IS NOT NULL THEN r.code
+        WHEN r.formatted_id IS NOT NULL THEN r.formatted_id
+        ELSE 'TICKET-' || r.event_id || '-' || r.id
+      END as qr_code
+    FROM reservations r
+    LEFT JOIN events e ON r.event_id = e.id
+    ORDER BY r.date DESC`;
+    
+    const rows = db.prepare(sql).all();
+    console.log(`Récupération de ${rows.length} réservations pour l'affichage dans le tableau`);
+    
+    res.json(rows);
+  } catch (e) {
+    console.error('Erreur lors de la récupération des réservations:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des réservations', details: e.message });
+  }
+});
+
 module.exports = router;
