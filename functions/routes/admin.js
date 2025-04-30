@@ -30,6 +30,21 @@ const db = new Database(path.join(__dirname, 'data.sqlite'));
 router.get('/tickets', requireAuth, (req, res) => {
   const { event_id, category_name } = req.query;
   
+  // Vérifier si la table reservations existe
+  let tableExists = false;
+  try {
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='reservations'").get();
+    tableExists = !!tableCheck;
+  } catch (e) {
+    console.error('Erreur lors de la vérification de la table reservations:', e);
+  }
+  
+  // Si la table n'existe pas, retourner un tableau vide
+  if (!tableExists) {
+    console.log('La table reservations n\'existe pas encore');
+    return res.json([]);
+  }
+  
   // Vérifier si la colonne 'code' existe dans la table reservations
   let codeColumnExists = false;
   try {

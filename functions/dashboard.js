@@ -250,11 +250,17 @@ window.addEventListener('DOMContentLoaded', () => {
         try {
           res = await fetch(`/admin/tickets?event_id=${encodeURIComponent(event_id)}&category_name=${encodeURIComponent(category_name)}`);
           rows = await res.json();
+          
+          // Vérifier si la réponse est un tableau vide
+          if (!rows || !Array.isArray(rows) || rows.length === 0) {
+            showAlert('Aucun ticket trouvé pour cet événement et cette catégorie. La table des réservations est peut-être vide ou n\'existe pas encore.', 'warning');
+            return;
+          }
         } catch(e) {
-          showAlert('L'export des codes QR nécessite une route /admin/tickets côté backend qui retourne la liste des tickets générés filtrables par event_id et category_name.','error');
+          console.error('Erreur lors de la récupération des tickets:', e);
+          showAlert('Erreur lors de la récupération des tickets. Vérifiez la console pour plus de détails.', 'error');
           return;
         }
-        if(!rows || !rows.length) return showAlert('Aucun code QR/ticket à exporter pour cette catégorie.','warning');
         const headers = ['Événement','Catégorie','Code','Statut','Utilisateur','Téléphone','Date de réservation'];
         const csv = [headers.join(',')].concat(
           rows.map(t => {
