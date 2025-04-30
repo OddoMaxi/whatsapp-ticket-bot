@@ -36,30 +36,51 @@ function applyReservationFilters() {
 function renderReservationsTable(filteredRows) {
   const tbody = document.querySelector('#reservations-table tbody');
   tbody.innerHTML = '';
+  
+  if (!filteredRows || filteredRows.length === 0) {
+    // Afficher un message si aucune réservation ne correspond aux filtres
+    tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-6 text-center text-gray-500">Aucune réservation ne correspond aux critères de filtrage sélectionnés.</td></tr>`;
+    return;
+  }
+  
   filteredRows.forEach(rsv => {
     tbody.innerHTML += `<tr>
-      <td>${rsv.user}</td>
-      <td>${rsv.phone || ''}</td>
-      <td>${rsv.event_name}</td>
-      <td>${rsv.category_name}</td>
-      <td>${rsv.quantity}</td>
-      <td>${rsv.unit_price} F</td>
-      <td>${rsv.total_price} F</td>
-      <td>${rsv.qr_code || ''}</td>
-      <td>${new Date(rsv.date).toLocaleString()}</td>
+      <td>${rsv.user || '-'}</td>
+      <td>${rsv.phone || '-'}</td>
+      <td>${rsv.event_name || '-'}</td>
+      <td>${rsv.category_name || '-'}</td>
+      <td>${rsv.quantity || '1'}</td>
+      <td>${rsv.unit_price ? rsv.unit_price + ' F' : '-'}</td>
+      <td>${rsv.total_price ? rsv.total_price + ' F' : '-'}</td>
+      <td class="font-mono text-xs">${rsv.qr_code || '-'}</td>
+      <td>${rsv.date ? new Date(rsv.date).toLocaleString() : '-'}</td>
     </tr>`;
   });
 }
 
 function fetchReservations() {
   Promise.all([
-    fetch('/admin/reservations').then(r => r.json()),
-    fetch('/admin/dashboard').then(r => r.json())
+    fetch('/admin/reservations').then(r => r.json()).catch(err => {
+      console.error('Erreur lors de la récupération des réservations:', err);
+      return []; // Retourner un tableau vide en cas d'erreur
+    }),
+    fetch('/admin/dashboard').then(r => r.json()).catch(err => {
+      console.error('Erreur lors de la récupération des événements:', err);
+      return []; // Retourner un tableau vide en cas d'erreur
+    })
   ]).then(([reservations, events]) => {
-    allReservations = reservations;
-    allEvents = events.map(ev => ({ ...ev, categories: ev.categories || [] }));
+    allReservations = reservations || [];
+    allEvents = (events || []).map(ev => ({ ...ev, categories: ev.categories || [] }));
     populateEventAndCategoryFilters();
     applyReservationFilters();
+    
+    // Afficher un message si aucune réservation n'est disponible
+    if (allReservations.length === 0) {
+      const tbody = document.querySelector('#reservations-table tbody');
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-6 text-center text-gray-500">Aucune réservation disponible. Les réservations apparaîtront ici une fois que des tickets auront été achetés.</td></tr>`;
+      }
+    }
   });
 }
 

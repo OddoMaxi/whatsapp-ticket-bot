@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const { requireAuth, handleLogin, handleLogout } = require('../auth');
+const { db } = require('../db');
 
 const router = express.Router();
 
@@ -115,6 +116,40 @@ router.get('/tickets', requireAuth, (req, res) => {
   } catch (e) {
     console.error('Erreur lors de la récupération des tickets:', e);
     res.status(500).json({ error: 'Erreur lors de la récupération des tickets', details: e.message });
+  }
+});
+
+// Route pour récupérer les événements et leurs catégories pour le tableau de bord
+router.get('/dashboard', requireAuth, (req, res) => {
+  try {
+    // Vérifier si la table events existe
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='events'").get();
+    if (!tableExists) {
+      console.log('La table events n\'existe pas encore');
+      return res.json([]);
+    }
+    
+    // Récupérer tous les événements avec leurs catégories
+    const events = db.prepare('SELECT * FROM events').all();
+    
+    // Convertir les catégories de JSON à objet JavaScript
+    const processedEvents = events.map(ev => {
+      try {
+        if (ev.categories && typeof ev.categories === 'string') {
+          ev.categories = JSON.parse(ev.categories);
+        }
+      } catch (e) {
+        console.error(`Erreur lors du parsing des catégories pour l'événement ${ev.id}:`, e);
+        ev.categories = [];
+      }
+      return ev;
+    });
+    
+    console.log(`Récupération de ${processedEvents.length} événements pour le tableau de bord`);
+    res.json(processedEvents);
+  } catch (e) {
+    console.error('Erreur lors de la récupération des événements:', e);
+    res.status(500).json({ error: 'Erreur lors de la récupération des événements', details: e.message });
   }
 });
 
