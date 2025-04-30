@@ -25,8 +25,6 @@ router.get('/', (req, res) => {
 });
 
 // --- Export tickets/codes QR par événement/catégorie ---
-const Database = require('better-sqlite3');
-const db = new Database(path.join(__dirname, 'data.sqlite'));
 
 router.get('/tickets', requireAuth, (req, res) => {
   const { event_id, category_name } = req.query;
