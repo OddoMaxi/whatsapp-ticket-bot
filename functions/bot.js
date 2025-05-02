@@ -200,6 +200,16 @@ telegramBot.on('callback_query', async (callbackQuery) => {
   const chatId = msg.chat.id;
   const userId = callbackQuery.from.id;
   
+  // DEBUG: Afficher les données du callback
+  console.log('=== TELEGRAM CALLBACK DEBUG ===');
+  console.log('Callback data reçue:', data);
+  console.log('User ID:', userId, 'Chat ID:', chatId);
+  console.log('Session existante:', paymentSessions.has(userId));
+  if (paymentSessions.has(userId)) {
+    const session = paymentSessions.get(userId);
+    console.log('Session step:', session.step);
+  }
+  
   // Acquitter le callback query pour éviter le chargement infini
   telegramBot.answerCallbackQuery(callbackQuery.id);
   
@@ -321,6 +331,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       paymentSessions.set(userId, session);
       
       // Demander confirmation
+      console.log('=== CRÉATION DU BOUTON DE CONFIRMATION ===');
       const keyboard = {
         inline_keyboard: [
           [{
@@ -332,6 +343,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           }]
         ]
       };
+      console.log('Bouton de confirmation créé:', JSON.stringify(keyboard));
       
       await telegramBot.sendMessage(
         chatId,
@@ -348,14 +360,18 @@ telegramBot.on('callback_query', async (callbackQuery) => {
     
     // Confirmation de l'achat
     else if (data === 'confirm_purchase') {
+      console.log('=== DÉBUT PROCESSUS DE CONFIRMATION D\'ACHAT ===');
       // Vérifier si l'utilisateur a une session active
       if (!paymentSessions.has(userId)) {
+        console.log('ERREUR: Session non trouvée pour l\'utilisateur', userId);
         return telegramBot.sendMessage(chatId, 'Votre session a expiré. Veuillez recommencer l\'achat.');
       }
       
       const session = paymentSessions.get(userId);
+      console.log('Session active trouvée:', JSON.stringify(session));
       const Database = require('better-sqlite3');
       const db = new Database(__dirname + '/data.sqlite');
+      console.log('Connexion à la base de données établie');
       
       // Vérifier la disponibilité des places
       const eventInfo = db.prepare('SELECT available_seats FROM events WHERE id = ?').get(session.event.id);
@@ -374,10 +390,13 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         reference: reference
       };
       
+      console.log('Données de paiement prêtes:', JSON.stringify(paymentData));
       await telegramBot.sendMessage(chatId, 'Génération du lien de paiement en cours...');
       
       try {
+        console.log('Appel au service chapchapPay.generatePaymentLink...');
         const paymentResponse = await chapchapPay.generatePaymentLink(paymentData);
+        console.log('Réponse de ChapChap Pay:', JSON.stringify(paymentResponse));
         
         // Stocker les informations de paiement dans la session
         session.paymentUrl = paymentResponse.payment_url;
@@ -418,25 +437,32 @@ telegramBot.on('callback_query', async (callbackQuery) => {
     
     // Vérification du paiement
     else if (data.startsWith('check_payment:')) {
+      console.log('=== DÉBUT VÉRIFICATION DE PAIEMENT ===');
       const reference = data.split(':')[1];
+      console.log('Référence de paiement:', reference);
       
       // Vérifier si l'utilisateur a une session active
       if (!paymentSessions.has(userId)) {
+        console.log('ERREUR: Session non trouvée pour l\'utilisateur', userId);
         return telegramBot.sendMessage(chatId, 'Votre session a expiré. Veuillez recommencer l\'achat.');
       }
       
       const session = paymentSessions.get(userId);
+      console.log('Session active trouvée:', JSON.stringify(session));
       
       // Vérifier que la référence correspond à celle de la session
       if (session.reference !== reference) {
+        console.log('ERREUR: Référence de paiement ne correspond pas:', session.reference, '!=', reference);
         return telegramBot.sendMessage(chatId, 'Référence de paiement invalide. Veuillez réessayer.');
       }
       
       await telegramBot.sendMessage(chatId, 'Vérification du statut de votre paiement...');
       
       try {
+        console.log('Appel au service chapchapPay.checkPaymentStatus avec référence:', reference);
         // Vérifier le statut du paiement
         const paymentStatus = await chapchapPay.checkPaymentStatus(reference);
+        console.log('Réponse du statut de paiement:', JSON.stringify(paymentStatus));
         const Database = require('better-sqlite3');
         const db = new Database(__dirname + '/data.sqlite');
         
