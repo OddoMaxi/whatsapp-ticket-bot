@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Achat de Tickets - Souli-Souli Bot</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-red-50 to-gray-100 min-h-screen">
+  <header class="bg-white shadow-md py-4">
+    <div class="container mx-auto px-4 flex justify-between items-center">
+      <div class="flex items-center">
+        <div class="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center text-white text-xl font-bold shadow-md mr-2">
+          <span>T</span>
+        </div>
+        <h1 class="text-xl font-bold text-gray-900">Souli-Souli Tickets</h1>
+      </div>
+      <nav>
+        <a href="/purchase/my-tickets" class="text-sm text-gray-600 hover:text-red-600 mr-4">Mes tickets</a>
+        <a href="/admin/login" class="text-sm text-gray-600 hover:text-red-600">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 py-8">
+    <h2 class="text-2xl font-bold text-center mb-8">Achetez vos tickets en ligne</h2>
+    
+    <div id="events-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Les événements seront chargés ici dynamiquement -->
+      <div class="animate-pulse flex flex-col bg-white rounded-lg shadow-md p-4">
+        <div class="h-8 bg-gray-200 rounded mb-4"></div>
+        <div class="h-4 bg-gray-200 rounded mb-2"></div>
+        <div class="h-4 bg-gray-200 rounded mb-4 w-3/4"></div>
+        <div class="h-24 bg-gray-200 rounded mb-4"></div>
+        <div class="h-10 bg-gray-200 rounded"></div>
+      </div>
+      <div class="animate-pulse flex flex-col bg-white rounded-lg shadow-md p-4">
+        <div class="h-8 bg-gray-200 rounded mb-4"></div>
+        <div class="h-4 bg-gray-200 rounded mb-2"></div>
+        <div class="h-4 bg-gray-200 rounded mb-4 w-3/4"></div>
+        <div class="h-24 bg-gray-200 rounded mb-4"></div>
+        <div class="h-10 bg-gray-200 rounded"></div>
+      </div>
+    </div>
+    
+    <!-- Modal d'authentification -->
+    <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+      <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+        <h3 class="text-xl font-bold mb-4">Authentification</h3>
+        
+        <!-- Étape 1: Saisie du numéro de téléphone -->
+        <div id="phone-step" class="space-y-4">
+          <p class="text-sm text-gray-600 mb-4">Entrez votre numéro de téléphone pour continuer</p>
+          
+          <div>
+            <label for="auth-phone" class="block text-sm font-medium text-gray-700 mb-1">Numéro de téléphone</label>
+            <input type="tel" id="auth-phone" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600" placeholder="XXX XX XX XX" required>
+          </div>
+          
+          <button id="request-code-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 rounded-md transition-colors">
+            Recevoir un code par SMS
+          </button>
+        </div>
+        
+        <!-- Étape 2: Vérification du code -->
+        <div id="code-step" class="space-y-4 hidden">
+          <p class="text-sm text-gray-600 mb-4">Un code de vérification a été envoyé à votre numéro de téléphone</p>
+          
+          <div>
+            <label for="verification-code" class="block text-sm font-medium text-gray-700 mb-1">Code de vérification</label>
+            <input type="text" id="verification-code" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600" placeholder="123456" maxlength="6" required>
+          </div>
+          
+          <button id="verify-code-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 rounded-md transition-colors">
+            Vérifier le code
+          </button>
+          
+          <p class="text-center text-sm">
+            <a href="#" id="back-to-phone" class="text-red-600 hover:text-red-800">Retour</a>
+          </p>
+        </div>
+        
+        <!-- Message d'erreur -->
+        <div id="auth-error" class="mt-4 text-red-600 text-sm hidden"></div>
+      </div>
+    </div>
+    
+    <!-- Modal d'achat de ticket -->
+    <div id="purchase-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+      <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+        <h3 class="text-xl font-bold mb-4" id="modal-title">Acheter un ticket</h3>
+        
+        <form id="purchase-form" class="space-y-4">
+          <input type="hidden" id="event-id" name="eventId">
+          
+          <div>
+            <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Catégorie</label>
+            <select id="category" name="categoryName" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600" required>
+              <!-- Les catégories seront chargées ici dynamiquement -->
+            </select>
+          </div>
+          
+          <div>
+            <label for="quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantité</label>
+            <input type="number" id="quantity" name="quantity" min="1" value="1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600" required>
+          </div>
+          
+          <div>
+            <label for="fullName" class="block text-sm font-medium text-gray-700 mb-1">Nom complet</label>
+            <input type="text" id="fullName" name="fullName" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600" required>
+          </div>
+          
+          <div>
+            <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email (optionnel)</label>
+            <input type="email" id="email" name="email" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-600">
+          </div>
+          
+          <div class="bg-gray-50 p-3 rounded-md">
+            <p class="text-sm text-gray-700">Prix total: <span id="total-price" class="font-bold">0 GNF</span></p>
+          </div>
+          
+          <div class="flex justify-end space-x-3 pt-4">
+            <button type="button" id="close-modal" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">Annuler</button>
+            <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md">Acheter</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+  
+  <footer class="bg-white py-6 mt-12">
+    <div class="container mx-auto px-4 text-center text-sm text-gray-500">
+      &copy; 2025 Souli-Souli Bot. Tous droits réservés.
+    </div>
+  </footer>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Variables globales
+      let sessionToken = localStorage.getItem('sessionToken');
+      let userPhone = localStorage.getItem('userPhone');
+      let currentEvent = null;
+      
+      // Éléments DOM pour l'authentification
+      const authModal = document.getElementById('auth-modal');
+      const phoneStep = document.getElementById('phone-step');
+      const codeStep = document.getElementById('code-step');
+      const authPhone = document.getElementById('auth-phone');
+      const requestCodeBtn = document.getElementById('request-code-btn');
+      const verificationCode = document.getElementById('verification-code');
+      const verifyCodeBtn = document.getElementById('verify-code-btn');
+      const backToPhone = document.getElementById('back-to-phone');
+      const authError = document.getElementById('auth-error');
+      
+      // Éléments DOM pour l'achat
+      const purchaseModal = document.getElementById('purchase-modal');
+      const modalTitle = document.getElementById('modal-title');
+      const eventId = document.getElementById('event-id');
+      const categorySelect = document.getElementById('category');
+      const quantityInput = document.getElementById('quantity');
+      const fullNameInput = document.getElementById('fullName');
+      const emailInput = document.getElementById('email');
+      const totalPrice = document.getElementById('total-price');
+      const purchaseForm = document.getElementById('purchase-form');
+      const closeModal = document.getElementById('close-modal');
+      
+      // Vérifier la session si elle existe
+      if (sessionToken) {
+        checkSession(sessionToken);
+      }
+      
+      // Charger les événements
+      loadEvents();
+      
+      // Fonctions d'authentification
+      async function checkSession(token) {
+        try {
+          const response = await fetch('/purchase/api/check-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ sessionToken: token })
+          });
+          
+          const data = await response.json();
+          
+          if (!data.success) {
+            // Session invalide, supprimer le token
+            localStorage.removeItem('sessionToken');
+            localStorage.removeItem('userPhone');
+            sessionToken = null;
+            userPhone = null;
+          } else {
+            userPhone = data.phone;
+            localStorage.setItem('userPhone', userPhone);
+          }
+        } catch (error) {
+          console.error('Erreur lors de la vérification de session:', error);
+          localStorage.removeItem('sessionToken');
+          localStorage.removeItem('userPhone');
+          sessionToken = null;
+          userPhone = null;
+        }
+      }
+      
+      // Demander un code de vérification
+      requestCodeBtn.addEventListener('click', async () => {
+        const phone = authPhone.value.trim();
+        
+        if (!phone) {
+          showAuthError('Veuillez entrer votre numéro de téléphone');
+          return;
+        }
+        
+        try {
+          const response = await fetch('/purchase/api/request-verification', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ phone })
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            // Passer à l'étape de vérification du code
+            phoneStep.classList.add('hidden');
+            codeStep.classList.remove('hidden');
+            userPhone = phone;
+            
+            // En mode développement, pré-remplir le code (à supprimer en production)
+            if (data.code) {
+              verificationCode.value = data.code;
+            }
+          } else {
+            showAuthError(data.error || 'Erreur lors de l\'envoi du code');
+          }
+        } catch (error) {
+          console.error('Erreur:', error);
+          showAuthError('Une erreur est survenue. Veuillez réessayer.');
+        }
+      });
+      
+      // Vérifier le code
+      verifyCodeBtn.addEventListener('click', async () => {
+        const code = verificationCode.value.trim();
+        
+        if (!code) {
+          showAuthError('Veuillez entrer le code de vérification');
+          return;
+        }
+        
+        try {
+          const response = await fetch('/purchase/api/verify-code', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ phone: userPhone, code })
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            // Stocker le token de session
+            sessionToken = data.sessionToken;
+            localStorage.setItem('sessionToken', sessionToken);
+            localStorage.setItem('userPhone', userPhone);
+            
+            // Fermer le modal d'authentification
+            authModal.classList.add('hidden');
+            
+            // Continuer l'achat
+            continueWithPurchase();
+          } else {
+            showAuthError(data.error || 'Code invalide');
+          }
+        } catch (error) {
+          console.error('Erreur:', error);
+          showAuthError('Une erreur est survenue. Veuillez réessayer.');
+        }
+      });
+      
+      // Retour à l'étape du numéro de téléphone
+      backToPhone.addEventListener('click', (e) => {
+        e.preventDefault();
+        codeStep.classList.add('hidden');
+        phoneStep.classList.remove('hidden');
+        authError.classList.add('hidden');
+      });
+      
+      // Afficher un message d'erreur d'authentification
+      function showAuthError(message) {
+        authError.textContent = message;
+        authError.classList.remove('hidden');
+      }
+      
+      // Charger les événements
+      async function loadEvents() {
+        try {
+          const response = await fetch('/purchase/api/events');
+          const events = await response.json();
+          
+          const eventsContainer = document.getElementById('events-container');
+          eventsContainer.innerHTML = '';
+          
+          if (events.length === 0) {
+            eventsContainer.innerHTML = `
+              <div class="col-span-full text-center py-12">
+                <p class="text-gray-500">Aucun événement disponible pour le moment.</p>
+              </div>
+            `;
+            return;
+          }
+          
+          events.forEach(event => {
+            const eventCard = document.createElement('div');
+            eventCard.className = 'bg-white rounded-lg shadow-md overflow-hidden';
+            
+            const formattedDate = event.date ? new Date(event.date).toLocaleDateString('fr-FR', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            }) : 'Date à confirmer';
+            
+            eventCard.innerHTML = `
+              <div class="p-6">
+                <h3 class="text-xl font-bold mb-2">${event.name}</h3>
+                <p class="text-sm text-gray-500 mb-1">${formattedDate}</p>
+                <p class="text-sm text-gray-700 mb-4">${event.description || 'Pas de description disponible'}</p>
+                
+                <div class="space-y-2 mb-4">
+                  ${event.categories.map(category => {
+                    // S'assurer que le prix est un nombre
+                    const price = typeof category.price === 'number' ? category.price : 
+                                 (typeof category.prix === 'number' ? category.prix : 
+                                 (!isNaN(parseFloat(category.price)) ? parseFloat(category.price) : 
+                                 (!isNaN(parseFloat(category.prix)) ? parseFloat(category.prix) : 0)));
+                    return `
+                    <div class="flex justify-between items-center">
+                      <span class="text-sm font-medium">${category.name}</span>
+                      <span class="text-sm font-bold">${price} GNF</span>
+                    </div>
+                  `}).join('')}
+                </div>
+                
+                <button 
+                  class="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md transition-colors"
+                  onclick="openPurchaseModal(${JSON.stringify(event).replace(/"/g, '&quot;')})"
+                >
+                  Acheter un ticket
+                </button>
+              </div>
+            `;
+            
+            eventsContainer.appendChild(eventCard);
+          });
+        } catch (error) {
+          console.error('Erreur lors du chargement des événements:', error);
+          const eventsContainer = document.getElementById('events-container');
+          eventsContainer.innerHTML = `
+            <div class="col-span-full text-center py-12">
+              <p class="text-red-500">Erreur lors du chargement des événements. Veuillez réessayer plus tard.</p>
+            </div>
+          `;
+        }
+      }
+      
+      // Fonction pour ouvrir le modal d'achat
+      window.openPurchaseModal = function(event) {
+        currentEvent = event;
+        
+        // Si l'utilisateur n'est pas authentifié, ouvrir le modal d'authentification
+        if (!sessionToken) {
+          authModal.classList.remove('hidden');
+          return;
+        }
+        
+        continueWithPurchase();
+      };
+      
+      // Continuer avec l'achat après authentification
+      function continueWithPurchase() {
+        if (!currentEvent) return;
+        
+        modalTitle.textContent = `Acheter un ticket pour ${currentEvent.name}`;
+        eventId.value = currentEvent.id;
+        
+        // Remplir les catégories
+        categorySelect.innerHTML = '';
+        
+        currentEvent.categories.forEach(category => {
+          // S'assurer que le prix est un nombre
+          const price = typeof category.price === 'number' ? category.price : 
+                      (typeof category.prix === 'number' ? category.prix : 
+                      (!isNaN(parseFloat(category.price)) ? parseFloat(category.price) : 
+                      (!isNaN(parseFloat(category.prix)) ? parseFloat(category.prix) : 0)));
+          
+          const option = document.createElement('option');
+          option.value = category.name;
+          option.textContent = `${category.name} - ${price} GNF`;
+          option.setAttribute('data-price', price);
+          categorySelect.appendChild(option);
+        });
+        
+        // Pré-remplir le numéro de téléphone si disponible
+        if (userPhone) {
+          // Si nous avions un champ téléphone dans le formulaire d'achat
+          // phoneInput.value = userPhone;
+        }
+        
+        // Mettre à jour le prix total initial
+        updateTotalPrice();
+        
+        // Afficher le modal
+        purchaseModal.classList.remove('hidden');
+      }
+      
+      // Mettre à jour le prix total
+      function updateTotalPrice() {
+        const selectedOption = categorySelect.options[categorySelect.selectedIndex];
+        const price = selectedOption ? parseFloat(selectedOption.getAttribute('data-price')) : 0;
+        
+        const quantity = parseInt(quantityInput.value) || 1;
+        const totalPriceValue = price * quantity;
+        
+        totalPrice.textContent = `${totalPriceValue} GNF`;
+      }
+      
+      // Événements pour mettre à jour le prix total
+      categorySelect.addEventListener('change', updateTotalPrice);
+      quantityInput.addEventListener('change', updateTotalPrice);
+      quantityInput.addEventListener('input', updateTotalPrice);
+      
+      // Fermer le modal d'achat
+      closeModal.addEventListener('click', () => {
+        purchaseModal.classList.add('hidden');
+      });
+      
+      // Soumettre le formulaire d'achat
+      purchaseForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const purchaseData = {
+          eventId: eventId.value,
+          categoryName: categorySelect.value,
+          fullName: fullNameInput.value,
+          email: emailInput.value,
+          quantity: parseInt(quantityInput.value),
+          sessionToken: sessionToken
+        };
+        
+        try {
+          const response = await fetch('/purchase/api/purchase', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(purchaseData)
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            // Rediriger vers la page de confirmation
+            window.location.href = `/purchase/confirmation/${result.reservationId}`;
+          } else {
+            alert(`Erreur: ${result.error}`);
+          }
+        } catch (error) {
+          console.error('Erreur lors de l\'achat:', error);
+          alert('Une erreur est survenue lors de l\'achat. Veuillez réessayer plus tard.');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -59,6 +59,12 @@ const ticketRouter = require('./routes/ticket');
 app.use('/', ticketRouter);
 
 // =============================
+// ROUTES POUR L'ACHAT DE TICKETS VIA WEB
+// =============================
+const webPurchaseRouter = require('./routes/web-purchase');
+app.use('/purchase', webPurchaseRouter);
+
+// =============================
 // BASE DE DONNÉES SQLITE (persistante en local)
 // =============================
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data', 'events.db');

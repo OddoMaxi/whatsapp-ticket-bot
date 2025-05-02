@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirmation de ticket - Souli-Souli Bot</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- QRCode.js pour générer les codes QR côté client -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-red-50 to-gray-100 min-h-screen">
+  <header class="bg-white shadow-md py-4">
+    <div class="container mx-auto px-4 flex justify-between items-center">
+      <div class="flex items-center">
+        <div class="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center text-white text-xl font-bold shadow-md mr-2">
+          <span>T</span>
+        </div>
+        <h1 class="text-xl font-bold text-gray-900">Souli-Souli Tickets</h1>
+      </div>
+      <nav>
+        <a href="/purchase" class="text-sm text-gray-600 hover:text-red-600 mr-4">Accueil</a>
+        <a href="/purchase/my-tickets" class="text-sm text-gray-600 hover:text-red-600">Mes tickets</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 py-8">
+    <div class="max-w-2xl mx-auto">
+      <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <div class="flex items-center justify-center mb-6">
+          <div class="bg-green-100 rounded-full p-2">
+            <svg class="w-8 h-8 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+          </div>
+          <h2 class="text-xl font-bold ml-3">Confirmation de votre ticket</h2>
+        </div>
+        
+        <div id="reservation-details" class="mb-6">
+          <div class="animate-pulse">
+            <div class="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
+            <div class="h-6 bg-gray-200 rounded w-1/2 mb-4"></div>
+            <div class="h-6 bg-gray-200 rounded w-5/6 mb-4"></div>
+          </div>
+        </div>
+        
+        <div class="border-t border-gray-200 pt-6">
+          <h3 class="text-lg font-semibold mb-4">Votre ticket</h3>
+          
+          <div id="ticket-container">
+            <div class="animate-pulse">
+              <div class="h-48 bg-gray-200 rounded mb-4"></div>
+            </div>
+          </div>
+          
+          <div class="mt-6 flex flex-wrap gap-3">
+            <button onclick="printTicket()" class="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-colors">
+              Imprimer le ticket
+            </button>
+            <a id="download-ticket-btn" href="#" onclick="downloadTicketImage()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors inline-flex items-center">
+              <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+              </svg>
+              Télécharger le ticket
+            </a>
+            <a href="/purchase/my-tickets" class="text-gray-600 hover:text-red-600 py-2 px-4">
+              Voir tous mes tickets
+            </a>
+          </div>
+        </div>
+      </div>
+      
+      <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+        <h3 class="text-blue-800 font-medium mb-2">Information importante</h3>
+        <p class="text-blue-700 text-sm">
+          Ce ticket a également été envoyé sur votre WhatsApp. Vous pouvez l'accéder à tout moment depuis la section "Mes tickets".
+        </p>
+      </div>
+    </div>
+  </main>
+  
+  <footer class="bg-white py-6 mt-12">
+    <div class="container mx-auto px-4 text-center text-sm text-gray-500">
+      &copy; 2023 Souli-Souli Bot. Tous droits réservés.
+    </div>
+  </footer>
+
+  <script>
+    // Fonction pour formater le prix
+    function formatPrice(price) {
+      if (typeof price === 'number') {
+        return price;
+      } else if (!isNaN(parseFloat(price))) {
+        return parseFloat(price);
+      }
+      return 0;
+    }
+    
+    // Obtenir l'ID de la réservation depuis l'URL
+    const pathParts = window.location.pathname.split('/');
+    const reservationId = pathParts[pathParts.length - 1];
+    
+    // Charger les détails de la réservation
+    document.addEventListener('DOMContentLoaded', function() {
+      fetch('/purchase/api/reservation/' + reservationId)
+      .then(function(response) {
+        if (!response.ok) {
+          throw new Error('Erreur lors du chargement des détails');
+        }
+        return response.json();
+      })
+      .then(function(data) {
+        try {
+          // Mettre à jour les détails de la réservation
+          const reservation = data.reservation;
+          if (!reservation) {
+            throw new Error('Réservation non trouvée');
+          }
+          
+          const eventDate = reservation.event_date ? new Date(reservation.event_date).toLocaleDateString('fr-FR', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          }) : 'Date non spécifiée';
+          
+          const purchaseDate = new Date(reservation.date).toLocaleDateString('fr-FR', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          
+          const price = formatPrice(reservation.unit_price || reservation.price || (reservation.total_price / (reservation.quantity || 1)));
+          
+          // Afficher les détails de la réservation
+          const reservationDetails = document.getElementById('reservation-details');
+          reservationDetails.innerHTML = 
+            '<p class="text-gray-700 mb-2">' +
+              '<span class="font-medium">Événement:</span> ' + (reservation.event_name || 'Événement non spécifié') +
+            '</p>' +
+            '<p class="text-gray-700 mb-2">' +
+              '<span class="font-medium">Date:</span> ' + eventDate +
+            '</p>' +
+            '<p class="text-gray-700 mb-2">' +
+              '<span class="font-medium">Catégorie:</span> ' + (reservation.category_name || 'Standard') +
+            '</p>' +
+            '<p class="text-gray-700 mb-2">' +
+              '<span class="font-medium">Quantité:</span> ' + (reservation.quantity || 1) +
+            '</p>' +
+            '<p class="text-gray-700 mb-2">' +
+              '<span class="font-medium">Prix unitaire:</span> ' + price + ' GNF' +
+            '</p>' +
+            '<p class="text-gray-700 mb-2">' +
+              '<span class="font-medium">Total:</span> ' + (price * (reservation.quantity || 1)) + ' GNF' +
+            '</p>' +
+            '<p class="text-gray-700 mb-2">' +
+              '<span class="font-medium">Acheté le:</span> ' + purchaseDate +
+            '</p>';
+          
+          // Créer le ticket avec QR code
+          const ticketContainer = document.getElementById('ticket-container');
+          const ticketId = reservation.formatted_id || reservation.qr_code || 'TICKET-' + reservation.id;
+          
+          ticketContainer.innerHTML = 
+            '<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">' +
+              '<div class="bg-red-600 text-white p-4">' +
+                '<h3 class="font-bold text-lg">' + (reservation.event_name || 'Événement') + '</h3>' +
+                '<p class="text-sm opacity-90">' + (reservation.category_name || 'Standard') + '</p>' +
+                '<p class="text-sm mt-2">' + eventDate + '</p>' +
+              '</div>' +
+              '<div class="p-4 flex items-center">' +
+                '<div class="mr-6">' +
+                  '<div id="qrcode" class="bg-white p-2 border border-gray-200 rounded-md"></div>' +
+                  '<p class="text-center text-xs mt-1 text-gray-500">' + ticketId + '</p>' +
+                '</div>' +
+                '<div>' +
+                  '<p class="text-sm text-gray-700 mb-1">' +
+                    '<span class="font-medium">Quantité:</span> ' + (reservation.quantity || 1) +
+                  '</p>' +
+                  '<p class="text-sm text-gray-700 mb-1">' +
+                    '<span class="font-medium">Prix:</span> ' + price + ' GNF' +
+                  '</p>' +
+                  '<p class="text-sm text-gray-700">' +
+                    '<span class="font-medium">Acheté le:</span> ' + purchaseDate +
+                  '</p>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+          
+          // Générer le QR code
+          const qrCode = ticketId;
+          QRCode.toCanvas(
+            document.getElementById('qrcode'), 
+            qrCode, 
+            { width: 128 }
+          );
+          
+        } catch (error) {
+          console.error('Erreur:', error);
+          const reservationDetails = document.getElementById('reservation-details');
+          reservationDetails.innerHTML = 
+            '<div class="bg-red-100 text-red-700 p-4 rounded-md">' +
+              '<p>Une erreur est survenue lors du chargement des détails de la réservation.</p>' +
+              '<p class="mt-2">Veuillez vérifier votre achat dans la section "Mes tickets".</p>' +
+            '</div>';
+          
+          const ticketContainer = document.getElementById('ticket-container');
+          ticketContainer.innerHTML = '';
+        }
+      });
+    });
+  </script>
+
+  <!-- Script séparé pour les fonctions de print et téléchargement -->
+  <script>
+    // Fonction pour imprimer un ticket
+    function printTicket() {
+      try {
+        var ticketElement = document.querySelector('#ticket-container > div');
+        if (!ticketElement) {
+          console.error('Élément ticket non trouvé');
+          return;
+        }
+        
+        var printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          alert('Veuillez autoriser les popups pour imprimer votre ticket.');
+          return;
+        }
+        
+        // Créer le contenu HTML pour l'impression sans utiliser de template literals
+        var htmlContent = '<!DOCTYPE html>' +
+          '<html>' +
+          '<head>' +
+          '<title>Ticket Souli-Souli</title>' +
+          '<style>' +
+          'body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }' +
+          '.ticket { border: 1px solid #ddd; border-radius: 8px; overflow: hidden; max-width: 400px; margin: 0 auto; }' +
+          '.ticket-header { background-color: #dc2626; color: white; padding: 12px; }' +
+          '.ticket-body { padding: 16px; display: flex; align-items: center; }' +
+          '.ticket-qr { margin-right: 24px; }' +
+          '.ticket-info p { margin: 4px 0; font-size: 14px; color: #333; }' +
+          '.ticket-info .label { font-weight: 600; }' +
+          '@media print { body { margin: 0; padding: 0; } .ticket { border: none; } }' +
+          '</style>' +
+          '</head>' +
+          '<body>' +
+          ticketElement.outerHTML +
+          '<script>' +
+          'window.onload = function() { window.print(); window.close(); };' +
+          '<\/script>' +
+          '</body>' +
+          '</html>';
+        
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+      } catch (error) {
+        console.error('Erreur lors de l\'impression du ticket:', error);
+        alert('Une erreur est survenue lors de l\'impression du ticket.');
+      }
+    }
+    
+    // Fonction pour télécharger les tickets en image
+    function downloadTicketImage() {
+      try {
+        // Obtenir l'ID de la réservation depuis l'URL
+        const pathParts = window.location.pathname.split('/');
+        const reservationId = pathParts[pathParts.length - 1];
+        
+        // Mettre à jour le bouton pour indiquer le téléchargement en cours
+        const downloadBtn = document.getElementById('download-ticket-btn');
+        const originalText = downloadBtn.innerHTML;
+        downloadBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Génération en cours...';
+        downloadBtn.disabled = true;
+        
+        // Créer un lien de téléchargement invisible
+        const downloadLink = document.createElement('a');
+        downloadLink.href = `/purchase/api/generate-ticket-image/${reservationId}`;
+        downloadLink.target = '_blank';
+        document.body.appendChild(downloadLink);
+        
+        // Simuler un clic sur le lien pour démarrer le téléchargement
+        downloadLink.click();
+        
+        // Supprimer le lien et restaurer le bouton après un court délai
+        setTimeout(() => {
+          document.body.removeChild(downloadLink);
+          downloadBtn.innerHTML = originalText;
+          downloadBtn.disabled = false;
+        }, 2000);
+      } catch (error) {
+        console.error('Erreur lors du téléchargement des tickets:', error);
+        alert('Une erreur est survenue lors du téléchargement des tickets.');
+        
+        // Restaurer le bouton en cas d'erreur
+        const downloadBtn = document.getElementById('download-ticket-btn');
+        downloadBtn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Télécharger en image';
+        downloadBtn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
