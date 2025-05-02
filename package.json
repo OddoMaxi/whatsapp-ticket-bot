@@ -4,7 +4,8 @@
   "description": "A WhatsApp ticket bot project.",
   "main": "index.js",
   "scripts": {
-    "start": "node functions/index.js"
+    "start": "node functions/index.js",
+    "postinstall": "cd functions && npm install"
   },
   "keywords": [],
   "author": "",
