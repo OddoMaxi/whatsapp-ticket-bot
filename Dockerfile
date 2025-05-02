@@ -14,16 +14,17 @@ RUN apt-get update && apt-get install -y \
     uuid-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copier les fichiers package.json et installer les dépendances
-COPY package*.json ./
+# Copier TOUS les fichiers du projet en une seule fois
+COPY . .
+
+# Supprimer le script postinstall du package.json principal car nous allons installer manuellement
+RUN sed -i '/postinstall/d' package.json
+
+# Installer les dépendances du projet principal
 RUN npm install
 
-# Copier les fichiers functions et installer les dépendances
-COPY functions/ ./functions/
+# Installer les dépendances du dossier functions séparément
 RUN cd functions && npm install
-
-# Copier le reste des fichiers
-COPY . .
 
 # Exposer le port
 EXPOSE 8080
