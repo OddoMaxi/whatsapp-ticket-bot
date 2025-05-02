@@ -14,17 +14,23 @@ RUN apt-get update && apt-get install -y \
     uuid-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copier TOUS les fichiers du projet en une seule fois
-COPY . .
+# Copier d'abord uniquement les fichiers package.json
+COPY package.json ./
+COPY functions/package.json ./functions/
 
-# Supprimer le script postinstall du package.json principal car nous allons installer manuellement
-RUN sed -i '/postinstall/d' package.json
+# Créer un script de démarrage simplifié sans postinstall
+RUN echo '{"name":"whatsapp-ticket-bot","version":"1.0.0","description":"A WhatsApp ticket bot project.","main":"index.js","scripts":{"start":"node functions/index.js"},"keywords":[],"author":"","license":"ISC","dependencies":{"axios":"^1.9.0"}}' > package.json
 
 # Installer les dépendances du projet principal
 RUN npm install
 
-# Installer les dépendances du dossier functions séparément
-RUN cd functions && npm install
+# Installer les dépendances du dossier functions
+WORKDIR /app/functions
+RUN npm install
+WORKDIR /app
+
+# Copier le reste des fichiers du projet
+COPY . .
 
 # Exposer le port
 EXPOSE 8080
