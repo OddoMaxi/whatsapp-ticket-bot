@@ -563,25 +563,75 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           const fullName = callbackQuery.from.first_name + ' ' + (callbackQuery.from.last_name || '');
           
           // Insérer la réservation avec statut de paiement
-          const insertResult = db.prepare(`
-            INSERT INTO reservations 
-            (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, payment_reference, payment_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(
-            fullName,
-            username,
-            session.event.id,
-            session.event.name,
-            session.category.name,
-            session.quantity,
-            session.category.price,
-            session.totalPrice,
-            'telegram',
-            reference,
-            reference,
-            reference,
-            'paid'
-          );
+          // Vérifier si les colonnes de paiement existent dans la table
+          let insertResult;
+          try {
+            // Vérifier si les colonnes payment_reference et payment_status existent
+            const columns = db.prepare("PRAGMA table_info(reservations)").all();
+            const hasPaymentColumns = columns.some(col => col.name === 'payment_reference') && 
+                                       columns.some(col => col.name === 'payment_status');
+            
+            console.log('Colonnes de paiement disponibles:', hasPaymentColumns);
+            
+            if (hasPaymentColumns) {
+              // Version avec colonnes de paiement
+              insertResult = db.prepare(`
+                INSERT INTO reservations 
+                (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, payment_reference, payment_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                fullName,
+                username,
+                session.event.id,
+                session.event.name,
+                session.category.name,
+                session.quantity,
+                session.category.price,
+                session.totalPrice,
+                'telegram',
+                reference,
+                reference,
+                reference,
+                'paid'
+              );
+            } else {
+              // Version sans colonnes de paiement
+              insertResult = db.prepare(`
+                INSERT INTO reservations 
+                (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                fullName,
+                username,
+                session.event.id,
+                session.event.name,
+                session.category.name,
+                session.quantity,
+                session.category.price,
+                session.totalPrice,
+                'telegram',
+                reference,
+                reference
+              );
+            }
+          } catch (sqlError) {
+            console.error('Erreur SQL lors de l\'insertion de la réservation:', sqlError);
+            // Fallback avec une version minimale sans vérification de colonnes
+            insertResult = db.prepare(`
+              INSERT INTO reservations 
+              (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              fullName,
+              username,
+              session.event.id,
+              session.event.name,
+              session.category.name,
+              session.quantity,
+              session.category.price,
+              session.totalPrice
+            );
+          }
           
           // Mettre à jour le nombre de places disponibles
           try {
