@@ -331,7 +331,20 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       session.totalPrice = session.category.price * quantity;
       paymentSessions.set(userId, session);
       
-      // Afficher le récapitulatif et générer directement le lien de paiement
+      // Afficher le récapitulatif et demander confirmation avec un bouton "Oui, confirmer"
+      const confirmKeyboard = {
+        inline_keyboard: [
+          [{
+            text: 'Oui, confirmer',
+            callback_data: 'confirm_purchase'
+          }],
+          [{
+            text: 'Annuler',
+            callback_data: 'cancel_purchase'
+          }]
+        ]
+      };
+      
       await telegramBot.sendMessage(
         chatId,
         `Récapitulatif de votre commande :\n` +
@@ -340,10 +353,23 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         `Quantité : ${quantity}\n` +
         `Prix unitaire : ${session.category.price} GNF\n` +
         `Prix total : ${session.totalPrice} GNF\n\n` +
-        `Génération du lien de paiement en cours...`
+        `Cliquez sur "Oui, confirmer" pour procéder au paiement.`,
+        { reply_markup: confirmKeyboard }
       );
-
-      // Générons directement le lien de paiement
+    }
+    
+    // Confirmer l'achat et générer le lien de paiement
+    else if (data === 'confirm_purchase') {
+      // Vérifier si l'utilisateur a une session active
+      if (!paymentSessions.has(userId)) {
+        console.log('ERREUR: Session non trouvée pour l\'utilisateur', userId);
+        return telegramBot.sendMessage(chatId, 'Votre session a expiré. Veuillez recommencer l\'achat.');
+      }
+      
+      const session = paymentSessions.get(userId);
+      await telegramBot.sendMessage(chatId, 'Génération du lien de paiement en cours...');
+      
+      // Générons le lien de paiement
       try {
         const Database = require('better-sqlite3');
         const db = new Database(__dirname + '/data.sqlite');
@@ -443,7 +469,9 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         const Database = require('better-sqlite3');
         const db = new Database(__dirname + '/data.sqlite');
         
-        if (paymentStatus.status === 'success') {
+        // Vérifier que le paiement est validé avant de générer les tickets
+        if (paymentStatus.status === 'success' || paymentStatus.status === 'completed' || paymentStatus.status === 'paid') {
+          console.log('Paiement confirmé avec le statut:', paymentStatus.status);
           // Paiement réussi, procéder à la création des tickets
           await telegramBot.sendMessage(chatId, 'Paiement confirmé ! Génération de vos tickets en cours...');
           
@@ -451,11 +479,11 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           const username = callbackQuery.from.username || '';
           const fullName = callbackQuery.from.first_name + ' ' + (callbackQuery.from.last_name || '');
           
-          // Insérer la réservation
+          // Insérer la réservation avec statut de paiement
           const insertResult = db.prepare(`
             INSERT INTO reservations 
-            (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, payment_reference, payment_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             fullName,
             username,
@@ -467,7 +495,9 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             session.totalPrice,
             'telegram',
             reference,
-            chapchapPay.generateTransactionId()
+            reference,
+            reference,
+            'paid'
           );
           
           // Mettre à jour le nombre de places disponibles

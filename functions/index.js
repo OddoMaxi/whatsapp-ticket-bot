@@ -461,7 +461,7 @@ app.post('/webhook', (req, res) => {
       response = 'Merci d\'indiquer un nombre valide.';
     }
   } else if (state.step === 'confirm' && /^oui$/i.test(msg)) {
-    // Confirmation : vérifie stock, décrémente, enregistre
+    // Confirmation : vérifie stock et redirige vers le paiement
     const event = db.prepare('SELECT * FROM events WHERE id=?').get(state.event.id);
     if (!event) {
       response = 'Erreur : événement introuvable.';
@@ -477,101 +477,204 @@ app.post('/webhook', (req, res) => {
         response = `Désolé, il ne reste que ${cat.quantite || cat.quantity} places pour cette catégorie.`;
         // On reste à l'étape de quantité
       } else {
-        // Décrémente le stock
-        cat.quantite = (cat.quantite || cat.quantity) - state.quantity;
-        cats[catIdx] = cat;
-        db.prepare('UPDATE events SET categories=? WHERE id=?').run(JSON.stringify(cats), event.id);
-        // Enregistre une réservation et génère un ticket POUR CHAQUE place réservée
-        const prix = cat.prix || cat.price;
-        for (let i = 0; i < state.quantity; i++) {
-  try {
-    // Chaque ticket a sa propre réservation (quantity = 1)
-    const rsvInfo = db.prepare(`INSERT INTO reservations (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-      from, req.body.From, event.id, event.name, cat.name, 1, prix, prix
-    );
-
-    // Calculer le numéro de ticket séquentiel pour cet event/cat
-    const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
-    const ticketNum = (previousTickets.count || 0) + 1;
-
-    // Constant for QR code length
-    const QR_CODE_LENGTH = 7;
-
-    let categoriesArr = event.categories;
-    if (typeof categoriesArr === 'string') {
-      try {
-        categoriesArr = JSON.parse(categoriesArr);
-      } catch (e) {
-        console.error('Erreur de parsing event.categories:', event.categories, e);
-        categoriesArr = [];
-      }
-    }
-
-    const catIdxForId = Array.isArray(categoriesArr) ? categoriesArr.findIndex(c => c.name === cat.name) : -1;
-    const formattedId = formatReservationId(event.id, catIdxForId, ticketNum);
-
-    // Générer un code QR unique de QR_CODE_LENGTH chiffres
-    let qrCode;
-    let maxAttempts = 10;
-    let attempts = 0;
-    do {
-      qrCode = String(Math.floor(Math.pow(10, QR_CODE_LENGTH - 1) + Math.random() * (Math.pow(10, QR_CODE_LENGTH) - Math.pow(10, QR_CODE_LENGTH - 1))));
-      attempts++;
-      if (attempts > maxAttempts) {
-        console.error('Impossible de générer un QR code unique après plusieurs tentatives.');
-        break;
-      }
-    } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
-
-    if (
-      catIdxForId === undefined || catIdxForId === -1 ||
-      formattedId === undefined || !qrCode || attempts > maxAttempts
-    ) {
-      console.error('Paramètre manquant ou invalide (WhatsApp):', {
-        catIdx: catIdxForId, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid
-      });
-    } else {
-      try {
-        // Vérifier si la colonne code existe avant de l'utiliser
-        const columnInfo = db.prepare("PRAGMA table_info(reservations)").all();
-        const codeColumnExists = columnInfo.some(col => col.name === 'code');
-        
-        if (codeColumnExists) {
-          db.prepare('UPDATE reservations SET formatted_id=?, qr_code=?, code=? WHERE id=?').run(formattedId, qrCode, formattedId, rsvInfo.lastInsertRowid);
-        } else {
-          db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
-        }
-      } catch (err) {
-        console.error("Erreur lors de la mise à jour de la réservation:", err);
-        // Fallback en cas d'erreur
-        db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
-      }
-      setTimeout(() => {
         try {
-          generateAndSendTicket({
-            to: from,
-            eventName: event.name,
-            category: cat.name,
-            reservationId: rsvInfo.lastInsertRowid,
-            formattedId,
-            qrCode
-          });
-        } catch (err) {
-          console.error('Erreur lors de l’appel à generateAndSendTicket (WhatsApp):', {
-            catIdx: catIdxForId, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid, err
-          });
+          // Import du service de paiement ChapChap Pay
+          const chapchapPay = require('./services/chapchap-pay');
+          
+          // Prix total
+          const prix = cat.prix || cat.price;
+          const totalPrice = prix * state.quantity;
+          
+          // Générer une référence unique pour ce paiement
+          const reference = chapchapPay.generateTransactionId();
+          
+          // Préparer les données de paiement
+          const paymentData = {
+            amount: totalPrice,
+            description: `Achat de ${state.quantity} ticket(s) pour ${event.name} - ${cat.name}`,
+            reference: reference
+          };
+          
+          console.log('Données de paiement:', JSON.stringify(paymentData));
+          
+          // Mettre à jour l'état de l'utilisateur pour stocker les infos de paiement
+          userStates[from] = {
+            ...state,
+            step: 'payment_pending',
+            paymentReference: reference,
+            totalPrice: totalPrice,
+            paymentCreatedAt: Date.now()
+          };
+          
+          // Générer le lien de paiement
+          chapchapPay.generatePaymentLink(paymentData)
+            .then(paymentResponse => {
+              console.log('Réponse ChapChap Pay:', JSON.stringify(paymentResponse));
+              
+              // Stocker l'URL de paiement dans l'état de l'utilisateur
+              userStates[from].paymentUrl = paymentResponse.payment_url;
+              
+              // Envoyer le lien de paiement à l'utilisateur
+              sendMessage(from, 
+                `💸 Votre lien de paiement est prêt !\n\n` +
+                `💰 Montant : ${paymentResponse.payment_amount_formatted}\n` +
+                `🆔 Référence : ${reference}\n\n` +
+                `⭐ Cliquez sur ce lien pour procéder au paiement :\n${paymentResponse.payment_url}\n\n` +
+                `❕ Après avoir effectué le paiement, envoyez "VERIFY" pour vérifier votre paiement et générer vos tickets.`
+              );
+            })
+            .catch(error => {
+              console.error('Erreur lors de la génération du lien de paiement:', error);
+              sendMessage(from, 'Une erreur est survenue lors de la génération du lien de paiement. Veuillez réessayer plus tard.');
+              userStates[from] = { step: 'init' };
+            });
+          
+          // Réponse immédiate en attendant l'API
+          response = 'Génération de votre lien de paiement en cours... Veuillez patienter quelques instants.';
+        } catch (error) {
+          console.error('Erreur dans le processus de paiement:', error);
+          response = 'Une erreur est survenue. Veuillez réessayer plus tard.';
+          userStates[from] = { step: 'init' };
         }
-      }, 0);
+      }
     }
-  } catch (err) {
-    console.error('Erreur lors de la génération du ticket (WhatsApp, boucle):', err);
-  }
-}
+  } else if (state.step === 'payment_pending' && /^verify$/i.test(msg)) {
+    // Vérification du statut du paiement
+    try {
+      // Import du service de paiement ChapChap Pay
+      const chapchapPay = require('./services/chapchap-pay');
+      
+      if (!state.paymentReference) {
+        response = 'Aucune référence de paiement trouvée. Veuillez recommencer l\'achat.';
+        userStates[from] = { step: 'init' };
+        return;
+      }
+      
+      response = 'Vérification de votre paiement en cours... Veuillez patienter quelques instants.';
+      
+      // Vérifier le statut du paiement
+      chapchapPay.checkPaymentStatus(state.paymentReference)
+        .then(paymentStatus => {
+          console.log('Statut de paiement:', JSON.stringify(paymentStatus));
+          
+          if (paymentStatus.status === 'completed' || paymentStatus.status === 'paid') {
+            // Paiement réussi, procéder à la génération des tickets
+            const event = db.prepare('SELECT * FROM events WHERE id=?').get(state.event.id);
+            let cats = JSON.parse(event.categories);
+            let catIdx = cats.findIndex(c => c.name === state.category.name);
+            let cat = cats[catIdx];
+            const prix = cat.prix || cat.price;
+            
+            sendMessage(from, 'Paiement confirmé ! Génération de vos tickets en cours...');
+            
+            // Décrémenter le stock maintenant que le paiement est confirmé
+            cat.quantite = (cat.quantite || cat.quantity) - state.quantity;
+            cats[catIdx] = cat;
+            db.prepare('UPDATE events SET categories=? WHERE id=?').run(JSON.stringify(cats), event.id);
+            
+            // Générer les tickets maintenant que le paiement est confirmé
+            for (let i = 0; i < state.quantity; i++) {
+              try {
+                // Chaque ticket a sa propre réservation (quantity = 1)
+                const rsvInfo = db.prepare(`INSERT INTO reservations (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, date, payment_reference)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`).run(
+                  from, req.body.From, event.id, event.name, cat.name, 1, prix, prix, state.paymentReference
+                );
 
-// After the for loop, set the response and user state
-response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par WhatsApp.\nTapez "menu" pour recommencer.`;
-userStates[userKey] = { step: 'init' };
+                // Calculer le numéro de ticket séquentiel pour cet event/cat
+                const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
+                const ticketNum = (previousTickets.count || 0) + 1;
+
+                // Constant for QR code length
+                const QR_CODE_LENGTH = 7;
+
+                let categoriesArr = event.categories;
+                if (typeof categoriesArr === 'string') {
+                  try {
+                    categoriesArr = JSON.parse(categoriesArr);
+                  } catch (e) {
+                    console.error('Erreur de parsing event.categories:', event.categories, e);
+                    categoriesArr = [];
+                  }
+                }
+
+                const catIdxForId = Array.isArray(categoriesArr) ? categoriesArr.findIndex(c => c.name === cat.name) : -1;
+                const formattedId = formatReservationId(event.id, catIdxForId, ticketNum);
+
+                // Générer un code QR unique de QR_CODE_LENGTH chiffres
+                let qrCode;
+                let maxAttempts = 10;
+                let attempts = 0;
+                do {
+                  qrCode = String(Math.floor(Math.pow(10, QR_CODE_LENGTH - 1) + Math.random() * (Math.pow(10, QR_CODE_LENGTH) - Math.pow(10, QR_CODE_LENGTH - 1))));
+                  attempts++;
+                  if (attempts > maxAttempts) {
+                    console.error('Impossible de générer un QR code unique après plusieurs tentatives.');
+                    break;
+                  }
+                } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
+
+                if (
+                  catIdxForId === undefined || catIdxForId === -1 ||
+                  formattedId === undefined || !qrCode || attempts > maxAttempts
+                ) {
+                  console.error('Paramètre manquant ou invalide (WhatsApp):', {
+                    catIdx: catIdxForId, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid
+                  });
+                } else {
+                  try {
+                    // Vérifier si la colonne code existe avant de l'utiliser
+                    const columnInfo = db.prepare("PRAGMA table_info(reservations)").all();
+                    const codeColumnExists = columnInfo.some(col => col.name === 'code');
+                    
+                    if (codeColumnExists) {
+                      db.prepare('UPDATE reservations SET formatted_id=?, qr_code=?, code=?, payment_status=? WHERE id=?').run(formattedId, qrCode, formattedId, 'paid', rsvInfo.lastInsertRowid);
+                    } else {
+                      db.prepare('UPDATE reservations SET formatted_id=?, qr_code=?, payment_status=? WHERE id=?').run(formattedId, qrCode, 'paid', rsvInfo.lastInsertRowid);
+                    }
+                  } catch (err) {
+                    console.error("Erreur lors de la mise à jour de la réservation:", err);
+                    // Fallback en cas d'erreur
+                    db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
+                  }
+                  setTimeout(() => {
+                    try {
+                      generateAndSendTicket({
+                        to: from,
+                        eventName: event.name,
+                        category: cat.name,
+                        reservationId: rsvInfo.lastInsertRowid,
+                        formattedId,
+                        qrCode
+                      });
+                    } catch (err) {
+                      console.error('Erreur lors de l'appel à generateAndSendTicket (WhatsApp):', {
+                        catIdx: catIdxForId, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid, err
+                      });
+                    }
+                  }, 0);
+                }
+              } catch (err) {
+                console.error('Erreur lors de la génération du ticket (WhatsApp, boucle):', err);
+              }
+            }
+
+            // After the for loop, set the response and user state
+            response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVos tickets vous sont envoyés par WhatsApp.\nTapez "menu" pour recommencer.`;
+            userStates[from] = { step: 'init' };
+          } else {
+            // Paiement non réussi ou en attente
+            sendMessage(from, `Le paiement n'est pas encore confirmé. Statut actuel: ${paymentStatus.status}.\nVeuillez finaliser votre paiement puis envoyer "VERIFY" pour vérifier à nouveau.`);
+          }
+        })
+        .catch(error => {
+          console.error('Erreur lors de la vérification du statut de paiement:', error);
+          sendMessage(from, 'Une erreur est survenue lors de la vérification de votre paiement. Veuillez réessayer plus tard en envoyant "VERIFY".');
+        });
+    } catch (error) {
+      console.error('Erreur dans le processus de vérification de paiement:', error);
+      response = 'Une erreur est survenue. Veuillez réessayer plus tard.';
+    }
 
       } 
     } 
