@@ -648,7 +648,7 @@ app.post('/webhook', (req, res) => {
                         qrCode
                       });
                     } catch (err) {
-                      console.error('Erreur lors de l'appel à generateAndSendTicket (WhatsApp):', {
+                      console.error('Erreur lors de l\'appel à generateAndSendTicket (WhatsApp):', {
                         catIdx: catIdxForId, formattedId, qrCode, from, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid, err
                       });
                     }
