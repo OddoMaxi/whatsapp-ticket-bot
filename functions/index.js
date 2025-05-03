@@ -903,3 +903,9 @@ telegramBot.on('message', async (msg) => {
 app.listen(port, () => {
   console.log(`✅ Bot WhatsApp actif sur le port ${port}`);
 });
+
+// Export des fonctions pour utilisation externe
+module.exports = {
+  generateAndSendTicket,
+  app
+};
