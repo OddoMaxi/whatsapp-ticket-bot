@@ -813,12 +813,10 @@ telegramBot.on('message', async (msg) => {
       return;
     }
 
-    // Récupère l'instance de MAP paymentSessions depuis bot.js
+    // Créer une session de paiement via la méthode exposée par le bot.js
     try {
-      // Créer une session directement dans les paymentSessions du bot.js
-      // Cette passerelle permet de synchroniser les données entre index.js et bot.js
+      // Préparation des données pour créer une session de paiement
       const prix = cat.prix || cat.price;
-      const botPaymentSessions = telegramBot.paymentSessions;
       
       // Nous injectons les données dans la session du bot dans le format qu'il attend
       const botSession = {
@@ -835,9 +833,9 @@ telegramBot.on('message', async (msg) => {
         totalPrice: prix * state.quantity
       };
       
-      // Enregistrer la session dans le bot Telegram
-      botPaymentSessions.set(userId, botSession);
-      console.log('Session de paiement créée dans bot.js:', botSession);
+      // Utiliser la méthode exposée pour créer une session de paiement
+      const sessionCreated = telegramBot.createPaymentSession(userId, botSession);
+      console.log('Session de paiement créée dans bot.js:', { userId, botSession, success: sessionCreated });
 
       // Au lieu d'essayer de simuler un callback, on va simplement envoyer un message avec le lien de paiement
       // dès que la session est créée dans bot.js
@@ -859,7 +857,8 @@ telegramBot.on('message', async (msg) => {
       // Mettre à jour la session avec les données de paiement
       botSession.paymentUrl = paymentResponse.payment_url;
       botSession.step = 'payment_pending';
-      botPaymentSessions.set(userId, botSession);
+      // Mettre à jour la session dans bot.js avec les nouvelles données
+      telegramBot.createPaymentSession(userId, botSession);
       
       // Envoyer le lien de paiement avec les boutons interactifs
       const keyboard = {

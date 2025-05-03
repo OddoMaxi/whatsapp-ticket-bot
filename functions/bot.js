@@ -743,4 +743,26 @@ telegramBot.on('callback_query', async (callbackQuery) => {
   }
 });
 
+// Exposer des fonctions pour permettre la gestion des sessions de paiement depuis l'extérieur
+
+// Création d'une session de paiement depuis l'extérieur (ex: index.js)
+telegramBot.createPaymentSession = function(userId, sessionData) {
+  console.log('Creation directe d\'une session depuis l\'extérieur', { userId, sessionData });
+  paymentSessions.set(userId, sessionData);
+  return true;
+};
+
+// Autres fonctions d'accès aux sessions
+telegramBot.getPaymentSession = function(userId) {
+  return paymentSessions.get(userId);
+};
+
+telegramBot.deletePaymentSession = function(userId) {
+  return paymentSessions.delete(userId);
+};
+
+telegramBot.hasPaymentSession = function(userId) {
+  return paymentSessions.has(userId);
+};
+
 module.exports = telegramBot;
