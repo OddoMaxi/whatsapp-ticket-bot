@@ -190,6 +190,80 @@ telegramBot.onText(/\/ticket ([0-9]+)/, async (msg, match) => {
 });
 
 // =============================
+// HANDLER TEXTE : RÉPONSE "OUI" (fallback si l'utilisateur tape au lieu de cliquer)
+// =============================
+telegramBot.on('message', async (msg) => {
+  // Ignorer les commandes commençant par '/'
+  if (!msg.text || msg.text.startsWith('/')) return;
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const text = msg.text.trim().toLowerCase();
+
+  // Vérifier si l'utilisateur tape "oui" alors qu'il devrait cliquer sur le bouton
+  if (text === 'oui' || text === 'oui, confirmer' || text === 'yes') {
+    if (!paymentSessions.has(userId)) return; // Aucune session
+    const session = paymentSessions.get(userId);
+
+    // Seuls les états en cours de création de paiement sont acceptés
+    if (session.step !== 'payment_creation') return;
+
+    console.log('DEBUG: Réponse texte "oui" détectée, génération du lien de paiement ...', { session });
+
+    // Reproduire la logique du callback confirm_purchase
+    try {
+      const Database = require('better-sqlite3');
+      const db = new Database(__dirname + '/data.sqlite');
+
+      // Vérifier la disponibilité des places
+      const eventInfo = db.prepare('SELECT available_seats FROM events WHERE id = ?').get(session.event.id);
+      if (eventInfo && typeof eventInfo.available_seats === 'number' && eventInfo.available_seats < session.quantity) {
+        return telegramBot.sendMessage(chatId, `Désolé, il ne reste que ${eventInfo.available_seats} place(s) disponible(s) pour cet événement.`);
+      }
+
+      // Générer une référence unique pour ce paiement
+      const reference = chapchapPay.generateTransactionId();
+      session.reference = reference;
+
+      // Générer le lien de paiement
+      const paymentData = {
+        amount: session.totalPrice,
+        description: `Achat de ${session.quantity} ticket(s) pour ${session.event.name} - ${session.category.name}`,
+        reference
+      };
+
+      const paymentResponse = await chapchapPay.generatePaymentLink(paymentData);
+
+      // Mettre à jour la session
+      session.paymentUrl = paymentResponse.payment_url;
+      session.step = 'payment_pending';
+      paymentSessions.set(userId, session);
+
+      // Envoyer le lien de paiement
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '💳 Payer maintenant', url: paymentResponse.payment_url }],
+          [{ text: '🔄 Vérifier le paiement', callback_data: `check_payment:${reference}` }],
+          [{ text: '❌ Annuler', callback_data: 'cancel_purchase' }]
+        ]
+      };
+
+      await telegramBot.sendMessage(
+        chatId,
+        `💸 Votre lien de paiement est prêt !\n\n` +
+        `💰 Montant : ${paymentResponse.payment_amount_formatted}\n` +
+        `🆔 Référence : ${reference}\n\n` +
+        `⭐ Cliquez sur "Payer maintenant" pour procéder au paiement.\n` +
+        `❕ Après paiement, cliquez sur "Vérifier le paiement" pour générer vos tickets.`,
+        { reply_markup: keyboard }
+      );
+    } catch (e) {
+      console.error('Erreur lors de la génération du lien de paiement (réponse texte oui) :', e);
+      telegramBot.sendMessage(chatId, 'Une erreur est survenue lors de la génération du lien de paiement. Veuillez réessayer plus tard.');
+    }
+  }
+});
+
+// =============================
 // CALLBACKS POUR LES BOUTONS INLINE
 // =============================
 
