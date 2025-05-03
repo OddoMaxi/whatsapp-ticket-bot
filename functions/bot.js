@@ -199,8 +199,8 @@ telegramBot.on('message', async (msg) => {
   const userId = msg.from.id;
   const text = msg.text.trim().toLowerCase();
 
-  // Vérifier si l'utilisateur tape "oui" alors qu'il devrait cliquer sur le bouton
-  if (text === 'oui' || text === 'oui, confirmer' || text === 'yes') {
+  // Vérifier si l'utilisateur tape "oui", "ok" ou autre confirmation alors qu'il devrait cliquer sur le bouton
+  if (text === 'oui' || text === 'oui, confirmer' || text === 'yes' || text === 'ok' || text === 'Ok') {
     if (!paymentSessions.has(userId)) return; // Aucune session
     const session = paymentSessions.get(userId);
 

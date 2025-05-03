@@ -786,14 +786,10 @@ telegramBot.on('message', async (msg) => {
   }
   if (state.step === 'confirm' && /^oui$/i.test(text)) {
     // ====================================================
-    // REDIRECTION VERS LA LOGIQUE DE PAIEMENT DANS BOT.JS
+    // CRÉATION D'UNE PASSERELLE ENTRE INDEX.JS ET BOT.JS 
     // ====================================================
-    console.log('ALERTE: Tentative de génération de ticket via index.js BLOQUÉE. Redirection vers la logique de paiement dans bot.js.', { userKey, state });
+    console.log('ALERTE: Paiement demandé via index.js - Transfert vers la logique de bot.js', { userKey, state });
     
-    // Au lieu de générer directement les tickets, on laisse bot.js gérer cette réponse
-    // Nous devons stocker les informations de l'événement et de la catégorie dans la session
-    // pour que bot.js puisse les retrouver
-
     // Vérification des stocks
     const event = db.prepare('SELECT * FROM events WHERE id=?').get(state.event.id);
     if (!event) {
@@ -816,13 +812,89 @@ telegramBot.on('message', async (msg) => {
       await telegramBot.sendMessage(userId, response);
       return;
     }
-    
-    // Continuer avec le processus de paiement via bot.js
-    // Tout le traitement du paiement, génération et envoi de tickets
-    // est désormais géré par le handler de messages dans bot.js
-    response = `Veuillez passer au paiement pour valider votre achat de ${state.quantity} ticket(s)\npour "${event.name}" en catégorie "${cat.name}".`;
-    await telegramBot.sendMessage(userId, response);
-    return;
+
+    // Récupère l'instance de MAP paymentSessions depuis bot.js
+    try {
+      // Créer une session directement dans les paymentSessions du bot.js
+      // Cette passerelle permet de synchroniser les données entre index.js et bot.js
+      const prix = cat.prix || cat.price;
+      const botPaymentSessions = telegramBot.paymentSessions;
+      
+      // Nous injectons les données dans la session du bot dans le format qu'il attend
+      const botSession = {
+        step: 'payment_creation', // État important pour le processus de bot.js
+        event: {
+          id: event.id,
+          name: event.name
+        },
+        category: {
+          name: cat.name,
+          price: prix
+        },
+        quantity: state.quantity,
+        totalPrice: prix * state.quantity
+      };
+      
+      // Enregistrer la session dans le bot Telegram
+      botPaymentSessions.set(userId, botSession);
+      console.log('Session de paiement créée dans bot.js:', botSession);
+
+      // Au lieu d'essayer de simuler un callback, on va simplement envoyer un message avec le lien de paiement
+      // dès que la session est créée dans bot.js
+      // Générer une référence unique pour le paiement
+      const chapchapPay = require('./services/chapchap-pay');
+      const reference = chapchapPay.generateTransactionId();
+      botSession.reference = reference;
+            
+      // Générer le lien de paiement
+      const paymentData = {
+        amount: botSession.totalPrice,
+        description: `Achat de ${state.quantity} ticket(s) pour ${event.name} - ${cat.name}`,
+        reference: reference
+      };
+
+      // Générer le lien de paiement avec ChapChap
+      const paymentResponse = await chapchapPay.generatePaymentLink(paymentData);
+      
+      // Mettre à jour la session avec les données de paiement
+      botSession.paymentUrl = paymentResponse.payment_url;
+      botSession.step = 'payment_pending';
+      botPaymentSessions.set(userId, botSession);
+      
+      // Envoyer le lien de paiement avec les boutons interactifs
+      const keyboard = {
+        inline_keyboard: [
+          [{
+            text: '💳 Payer maintenant',
+            url: paymentResponse.payment_url
+          }],
+          [{
+            text: '🔄 Vérifier le paiement',
+            callback_data: `check_payment:${reference}`
+          }],
+          [{
+            text: '❌ Annuler',
+            callback_data: 'cancel_purchase'
+          }]
+        ]
+      };
+      
+      await telegramBot.sendMessage(
+        userId,
+        `💸 Votre lien de paiement est prêt !\n\n` +
+        `💰 Montant : ${botSession.totalPrice} F CFA\n` +
+        `🆔 Référence : ${reference}\n\n` +
+        `⭐ Cliquez sur "Payer maintenant" pour procéder au paiement.\n` +
+        `❕ Après paiement, cliquez sur "Vérifier le paiement" pour générer vos tickets.`,
+        { reply_markup: keyboard }
+      );
+      return;
+    } catch (error) {
+      console.error('Erreur lors de la transmission des données vers bot.js:', error);
+      response = 'Une erreur est survenue lors de la préparation du paiement. Veuillez réessayer.';
+      await telegramBot.sendMessage(userId, response);
+      return;
+    }
   }
   // Message par défaut Telegram
   await telegramBot.sendMessage(userId, 'Bienvenue sur le bot de vente de tickets ! Tapez "menu" pour commencer.');
