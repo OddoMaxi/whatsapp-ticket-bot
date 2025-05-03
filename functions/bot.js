@@ -598,8 +598,8 @@ telegramBot.on('callback_query', async (callbackQuery) => {
               // Version sans colonnes de paiement
               insertResult = db.prepare(`
                 INSERT INTO reservations 
-                (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
               `).run(
                 fullName,
                 username,
@@ -619,8 +619,8 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             // Fallback avec une version minimale sans vérification de colonnes
             insertResult = db.prepare(`
               INSERT INTO reservations 
-              (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, date)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             `).run(
               fullName,
               username,
