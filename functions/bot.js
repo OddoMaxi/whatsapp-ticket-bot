@@ -557,8 +557,21 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           // Générer et envoyer le ticket principal
           const generateAndSendTicket = require('./index').generateAndSendTicket;
 
+          // LOG: trace d'appel de la génération du ticket principal
+          console.log('DEBUG: Tentative de génération du ticket principal', {
+            session,
+            insertResult,
+            reference,
+            paymentStatus
+          });
+
           // Vérification supplémentaire pour éviter le double envoi
           if (session.step === 'paid') {
+            console.log('DEBUG: Envoi effectif du ticket principal à l\'utilisateur', {
+              chatId,
+              reservationId: insertResult.lastInsertRowid,
+              reference
+            });
             generateAndSendTicket({
               to: chatId,
               channel: 'telegram',
@@ -582,6 +595,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             paymentSessions.delete(userId);
           } else {
             // Si on arrive ici, il y a un problème d'état
+            console.log('DEBUG: Blocage génération ticket - état session incorrect', { session });
             await telegramBot.sendMessage(chatId, 'Erreur de synchronisation de paiement. Veuillez contacter le support.');
           }
           
