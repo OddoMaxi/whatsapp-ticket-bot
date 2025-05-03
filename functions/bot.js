@@ -458,9 +458,15 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         console.log('ERREUR: Référence de paiement ne correspond pas:', session.reference, '!=', reference);
         return telegramBot.sendMessage(chatId, 'Référence de paiement invalide. Veuillez réessayer.');
       }
-      
+
+      // Empêcher toute génération de ticket si la session n'est pas en attente de paiement
+      if (session.step !== 'payment_pending') {
+        console.log('Tentative de génération de ticket sans étape payment_pending. Session:', JSON.stringify(session));
+        return telegramBot.sendMessage(chatId, "Vous devez d'abord effectuer le paiement avant de recevoir vos tickets.");
+      }
+
       await telegramBot.sendMessage(chatId, 'Vérification du statut de votre paiement...');
-      
+
       try {
         console.log('Appel au service chapchapPay.checkPaymentStatus avec référence:', reference);
         // Vérifier le statut du paiement
@@ -468,9 +474,12 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         console.log('Réponse du statut de paiement:', JSON.stringify(paymentStatus));
         const Database = require('better-sqlite3');
         const db = new Database(__dirname + '/data.sqlite');
-        
+
         // Vérifier que le paiement est validé avant de générer les tickets
         if (paymentStatus.status === 'success' || paymentStatus.status === 'completed' || paymentStatus.status === 'paid') {
+          // Mettre à jour l'état de la session pour éviter tout double envoi
+          session.step = 'paid';
+          paymentSessions.set(userId, session);
           console.log('Paiement confirmé avec le statut:', paymentStatus.status);
           // Paiement réussi, procéder à la création des tickets
           await telegramBot.sendMessage(chatId, 'Paiement confirmé ! Génération de vos tickets en cours...');
@@ -547,28 +556,34 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           
           // Générer et envoyer le ticket principal
           const generateAndSendTicket = require('./index').generateAndSendTicket;
-          
-          generateAndSendTicket({
-            to: chatId,
-            channel: 'telegram',
-            eventName: session.event.name,
-            category: session.category.name,
-            reservationId: insertResult.lastInsertRowid,
-            price: session.category.price,
-            formattedId: reference,
-            qrCode: reference
-          });
-          
-          // Envoyer un message de confirmation
-          await telegramBot.sendMessage(
-            chatId,
-            `Vos tickets ont été générés avec succès !\n` +
-            `Référence de réservation : ${reference}\n` +
-            `Vous pouvez les consulter et les télécharger en utilisant la commande /mestickets`
-          );
-          
-          // Nettoyer la session
-          paymentSessions.delete(userId);
+
+          // Vérification supplémentaire pour éviter le double envoi
+          if (session.step === 'paid') {
+            generateAndSendTicket({
+              to: chatId,
+              channel: 'telegram',
+              eventName: session.event.name,
+              category: session.category.name,
+              reservationId: insertResult.lastInsertRowid,
+              price: session.category.price,
+              formattedId: reference,
+              qrCode: reference
+            });
+
+            // Envoyer un message de confirmation
+            await telegramBot.sendMessage(
+              chatId,
+              `Vos tickets ont été générés avec succès !\n` +
+              `Référence de réservation : ${reference}\n` +
+              `Vous pouvez les consulter et les télécharger en utilisant la commande /mestickets`
+            );
+
+            // Nettoyer la session
+            paymentSessions.delete(userId);
+          } else {
+            // Si on arrive ici, il y a un problème d'état
+            await telegramBot.sendMessage(chatId, 'Erreur de synchronisation de paiement. Veuillez contacter le support.');
+          }
           
         } else if (paymentStatus.status === 'pending') {
           // Paiement en attente
