@@ -675,9 +675,6 @@ app.post('/webhook', (req, res) => {
       console.error('Erreur dans le processus de vérification de paiement:', error);
       response = 'Une erreur est survenue. Veuillez réessayer plus tard.';
     }
-
-      } 
-    } 
   } else {
     // Message par défaut
     response = 'Bienvenue sur le bot de vente de tickets ! Tapez "menu" pour commencer.';
