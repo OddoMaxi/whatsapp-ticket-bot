@@ -696,6 +696,8 @@ telegramBot.on('callback_query', async (callbackQuery) => {
               reservationId: insertResult.lastInsertRowid,
               reference
             });
+            
+            // Générer et envoyer le ticket principal
             generateAndSendTicket({
               to: chatId,
               channel: 'telegram',
@@ -706,12 +708,46 @@ telegramBot.on('callback_query', async (callbackQuery) => {
               formattedId: reference,
               qrCode: reference
             });
+            
+            // Générer et envoyer les tickets supplémentaires, si applicable
+            if (session.quantity > 1) {
+              try {
+                // Récupérer les tickets supplémentaires de la base de données
+                const additionalTickets = db.prepare(`
+                  SELECT * FROM additional_tickets WHERE reservation_id = ? ORDER BY ticket_number
+                `).all(insertResult.lastInsertRowid);
+                
+                console.log(`DEBUG: Génération de ${additionalTickets.length} tickets supplémentaires`);
+                
+                // Générer et envoyer chaque ticket supplémentaire
+                for (const ticket of additionalTickets) {
+                  console.log(`DEBUG: Envoi du ticket supplémentaire n°${ticket.ticket_number}`, ticket);
+                  
+                  generateAndSendTicket({
+                    to: chatId,
+                    channel: 'telegram',
+                    eventName: session.event.name,
+                    category: session.category.name,
+                    reservationId: insertResult.lastInsertRowid,
+                    price: session.category.price,
+                    formattedId: ticket.formatted_id,
+                    qrCode: ticket.qr_code
+                  });
+                  
+                  // Petite pause entre chaque envoi pour éviter les limitations API
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              } catch (additionalTicketError) {
+                console.error('Erreur lors de la génération des tickets supplémentaires:', additionalTicketError);
+              }
+            }
 
             // Envoyer un message de confirmation
             await telegramBot.sendMessage(
               chatId,
               `Vos tickets ont été générés avec succès !\n` +
               `Référence de réservation : ${reference}\n` +
+              `Nombre de tickets : ${session.quantity}\n` +
               `Vous pouvez les consulter et les télécharger en utilisant la commande /mestickets`
             );
 
