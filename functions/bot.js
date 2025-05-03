@@ -159,7 +159,7 @@ telegramBot.onText(/\/ticket ([0-9]+)/, async (msg, match) => {
     const reservations = db.prepare(`
       SELECT * FROM reservations 
       WHERE (purchase_channel = 'telegram' AND phone = ?) 
-      ORDER BY created_at DESC
+      ORDER BY date DESC
     `).all(username);
     
     if (!reservations || reservations.length === 0 || ticketIndex < 0 || ticketIndex >= reservations.length) {
