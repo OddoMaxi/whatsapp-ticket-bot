@@ -320,31 +320,18 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       
       // Vérifier si l'utilisateur a une session active
       if (!paymentSessions.has(userId)) {
+        console.log('ERREUR: Session non trouvée pour l\'utilisateur', userId);
         return telegramBot.sendMessage(chatId, 'Votre session a expiré. Veuillez recommencer l\'achat.');
       }
       
       // Mettre à jour la session avec la quantité sélectionnée
       const session = paymentSessions.get(userId);
       session.quantity = quantity;
-      session.step = 'confirm_purchase';
+      session.step = 'payment_creation';
       session.totalPrice = session.category.price * quantity;
       paymentSessions.set(userId, session);
       
-      // Demander confirmation
-      console.log('=== CRÉATION DU BOUTON DE CONFIRMATION ===');
-      const keyboard = {
-        inline_keyboard: [
-          [{
-            text: 'Confirmer et payer',
-            callback_data: 'confirm_purchase'
-          }, {
-            text: 'Annuler',
-            callback_data: 'cancel_purchase'
-          }]
-        ]
-      };
-      console.log('Bouton de confirmation créé:', JSON.stringify(keyboard));
-      
+      // Afficher le récapitulatif et générer directement le lien de paiement
       await telegramBot.sendMessage(
         chatId,
         `Récapitulatif de votre commande :\n` +
@@ -353,47 +340,36 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         `Quantité : ${quantity}\n` +
         `Prix unitaire : ${session.category.price} GNF\n` +
         `Prix total : ${session.totalPrice} GNF\n\n` +
-        `Veuillez confirmer votre achat :`,
-        { reply_markup: keyboard }
+        `Génération du lien de paiement en cours...`
       );
-    }
-    
-    // Confirmation de l'achat
-    else if (data === 'confirm_purchase') {
-      console.log('=== DÉBUT PROCESSUS DE CONFIRMATION D\'ACHAT ===');
-      // Vérifier si l'utilisateur a une session active
-      if (!paymentSessions.has(userId)) {
-        console.log('ERREUR: Session non trouvée pour l\'utilisateur', userId);
-        return telegramBot.sendMessage(chatId, 'Votre session a expiré. Veuillez recommencer l\'achat.');
-      }
-      
-      const session = paymentSessions.get(userId);
-      console.log('Session active trouvée:', JSON.stringify(session));
-      const Database = require('better-sqlite3');
-      const db = new Database(__dirname + '/data.sqlite');
-      console.log('Connexion à la base de données établie');
-      
-      // Vérifier la disponibilité des places
-      const eventInfo = db.prepare('SELECT available_seats FROM events WHERE id = ?').get(session.event.id);
-      if (eventInfo && typeof eventInfo.available_seats === 'number' && eventInfo.available_seats < session.quantity) {
-        return telegramBot.sendMessage(chatId, `Désolé, il ne reste que ${eventInfo.available_seats} place(s) disponible(s) pour cet événement.`);
-      }
-      
-      // Générer une référence unique pour ce paiement
-      const reference = chapchapPay.generateTransactionId();
-      session.reference = reference;
-      
-      // Générer le lien de paiement
-      const paymentData = {
-        amount: session.totalPrice,
-        description: `Achat de ${session.quantity} ticket(s) pour ${session.event.name} - ${session.category.name}`,
-        reference: reference
-      };
-      
-      console.log('Données de paiement prêtes:', JSON.stringify(paymentData));
-      await telegramBot.sendMessage(chatId, 'Génération du lien de paiement en cours...');
-      
+
+      // Générons directement le lien de paiement
       try {
+        const Database = require('better-sqlite3');
+        const db = new Database(__dirname + '/data.sqlite');
+        console.log('Connexion à la base de données établie');
+
+        // Vérifier la disponibilité des places
+        const eventInfo = db.prepare('SELECT available_seats FROM events WHERE id = ?').get(session.event.id);
+        if (eventInfo && typeof eventInfo.available_seats === 'number' && eventInfo.available_seats < session.quantity) {
+          return telegramBot.sendMessage(chatId, `Désolé, il ne reste que ${eventInfo.available_seats} place(s) disponible(s) pour cet événement.`);
+        }
+      
+        // Générer une référence unique pour ce paiement
+        const reference = chapchapPay.generateTransactionId();
+        session.reference = reference;
+        console.log('Référence générée:', reference);
+      
+        // Générer le lien de paiement
+        const paymentData = {
+          amount: session.totalPrice,
+          description: `Achat de ${session.quantity} ticket(s) pour ${session.event.name} - ${session.category.name}`,
+          reference: reference
+        };
+      
+        console.log('Données de paiement prêtes:', JSON.stringify(paymentData));
+        await telegramBot.sendMessage(chatId, 'Génération du lien de paiement en cours...');
+      
         console.log('Appel au service chapchapPay.generatePaymentLink...');
         const paymentResponse = await chapchapPay.generatePaymentLink(paymentData);
         console.log('Réponse de ChapChap Pay:', JSON.stringify(paymentResponse));
@@ -407,15 +383,15 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         const keyboard = {
           inline_keyboard: [
             [{
-              text: 'Payer maintenant',
+              text: '💳 Payer maintenant',
               url: paymentResponse.payment_url
             }],
             [{
-              text: 'Vérifier le paiement',
+              text: '🔄 Vérifier le paiement',
               callback_data: `check_payment:${reference}`
             }],
             [{
-              text: 'Annuler',
+              text: '❌ Annuler',
               callback_data: 'cancel_purchase'
             }]
           ]
@@ -423,10 +399,11 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         
         await telegramBot.sendMessage(
           chatId,
-          `Votre lien de paiement est prêt !\n` +
-          `Montant : ${paymentResponse.payment_amount_formatted}\n` +
-          `Référence : ${reference}\n\n` +
-          `Cliquez sur le bouton ci-dessous pour procéder au paiement. Une fois le paiement effectué, cliquez sur "Vérifier le paiement" pour générer vos tickets.`,
+          `💸 Votre lien de paiement est prêt !\n\n` +
+          `💰 Montant : ${paymentResponse.payment_amount_formatted}\n` +
+          `🆔 Référence : ${reference}\n\n` +
+          `⭐ Cliquez sur "Payer maintenant" pour procéder au paiement.\n` +
+          `❕ Après paiement, cliquez sur "Vérifier le paiement" pour générer vos tickets.`,
           { reply_markup: keyboard }
         );
       } catch (error) {
