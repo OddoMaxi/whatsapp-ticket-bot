@@ -785,7 +785,16 @@ telegramBot.on('message', async (msg) => {
     return;
   }
   if (state.step === 'confirm' && /^oui$/i.test(text)) {
-    // Confirmation : vérifie stock, décrémente, enregistre
+    // ====================================================
+    // REDIRECTION VERS LA LOGIQUE DE PAIEMENT DANS BOT.JS
+    // ====================================================
+    console.log('ALERTE: Tentative de génération de ticket via index.js BLOQUÉE. Redirection vers la logique de paiement dans bot.js.', { userKey, state });
+    
+    // Au lieu de générer directement les tickets, on laisse bot.js gérer cette réponse
+    // Nous devons stocker les informations de l'événement et de la catégorie dans la session
+    // pour que bot.js puisse les retrouver
+
+    // Vérification des stocks
     const event = db.prepare('SELECT * FROM events WHERE id=?').get(state.event.id);
     if (!event) {
       response = 'Erreur : événement introuvable.';
@@ -796,6 +805,7 @@ telegramBot.on('message', async (msg) => {
     let cats = JSON.parse(event.categories);
     let catIdx = cats.findIndex(c => c.name === state.category.name);
     let cat = cats[catIdx];
+
     if (!cat) {
       response = 'Erreur : catégorie introuvable.';
       userStates[userKey] = { step: 'init' };
@@ -805,84 +815,14 @@ telegramBot.on('message', async (msg) => {
       response = `Désolé, il ne reste que ${cat.quantite || cat.quantity} places pour cette catégorie.`;
       await telegramBot.sendMessage(userId, response);
       return;
-    } else {
-      // Décrémente le stock
-      cat.quantite = (cat.quantite || cat.quantity) - state.quantity;
-      cats[catIdx] = cat;
-      db.prepare('UPDATE events SET categories=? WHERE id=?').run(JSON.stringify(cats), event.id);
-      // Enregistre une réservation et génère un ticket POUR CHAQUE place réservée
-      const prix = cat.prix || cat.price;
-      for (let i = 0; i < state.quantity; i++) {
-        try {
-          // Chaque ticket a sa propre réservation (quantity = 1)
-          const rsvInfo = db.prepare(`INSERT INTO reservations (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-              userId, '', event.id, event.name, cat.name, 1, prix, prix
-          );
-          // Calculer le numéro de ticket séquentiel pour cet event/cat
-          const previousTickets = db.prepare('SELECT COUNT(*) as count FROM reservations WHERE event_id=? AND category_name=?').get(event.id, cat.name);
-          const ticketNum = (previousTickets.count || 0) + 1;
-          // S'assurer que event.categories est bien un tableau
-          let categoriesArr = event.categories;
-          if (typeof categoriesArr === 'string') {
-            try {
-              categoriesArr = JSON.parse(categoriesArr);
-            } catch (e) {
-              console.error('Erreur de parsing event.categories:', event.categories, e);
-              categoriesArr = [];
-            }
-          }
-          const catIdx = Array.isArray(categoriesArr) ? categoriesArr.findIndex(c => c.name === cat.name) : -1;
-          const formattedId = formatReservationId(event.id, catIdx, ticketNum);
-          // Générer un code QR unique de 7 chiffres
-          let qrCode;
-          do {
-            qrCode = String(Math.floor(1000000 + Math.random() * 9000000));
-          } while (db.prepare('SELECT 1 FROM reservations WHERE qr_code = ?').get(qrCode));
-          try {
-        // Vérifier si la colonne code existe avant de l'utiliser
-        const columnInfo = db.prepare("PRAGMA table_info(reservations)").all();
-        const codeColumnExists = columnInfo.some(col => col.name === 'code');
-        
-        if (codeColumnExists) {
-          db.prepare('UPDATE reservations SET formatted_id=?, qr_code=?, code=? WHERE id=?').run(formattedId, qrCode, formattedId, rsvInfo.lastInsertRowid);
-        } else {
-          db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
-        }
-      } catch (err) {
-        console.error("Erreur lors de la mise à jour de la réservation:", err);
-        // Fallback en cas d'erreur
-        db.prepare('UPDATE reservations SET formatted_id=?, qr_code=? WHERE id=?').run(formattedId, qrCode, rsvInfo.lastInsertRowid);
-      }
-          setTimeout(() => {
-            try {
-              if (catIdx === undefined || formattedId === undefined || qrCode === undefined) {
-                console.error('Paramètre manquant (Telegram):', {catIdx, formattedId, qrCode, userId, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid});
-              }
-              generateAndSendTicket({
-                to: userId,
-                channel: 'telegram',
-                eventName: event.name,
-                category: cat.name,
-                reservationId: rsvInfo.lastInsertRowid,
-                formattedId,
-                qrCode
-              });
-            } catch (err) {
-              console.error('Erreur lors de l’appel à generateAndSendTicket (Telegram):', {
-                catIdx, formattedId, qrCode, userId, eventName: event.name, category: cat.name, reservationId: rsvInfo.lastInsertRowid, err
-              });
-            }
-          }, 0);
-        } catch (err) {
-          console.error('Erreur lors de la génération du ticket (Telegram, boucle):', err);
-        }
-      }
-      response = `Merci ! Votre réservation de ${state.quantity} ticket(s) pour "${event.name}" en catégorie "${cat.name}" est confirmée.\nVotre ticket va vous être envoyé dans quelques instants par Telegram.\nTapez "menu" pour recommencer.`;
-      userStates[userKey] = { step: 'init' };
-      await telegramBot.sendMessage(userId, response);
-      return;
     }
+    
+    // Continuer avec le processus de paiement via bot.js
+    // Tout le traitement du paiement, génération et envoi de tickets
+    // est désormais géré par le handler de messages dans bot.js
+    response = `Veuillez passer au paiement pour valider votre achat de ${state.quantity} ticket(s)\npour "${event.name}" en catégorie "${cat.name}".`;
+    await telegramBot.sendMessage(userId, response);
+    return;
   }
   // Message par défaut Telegram
   await telegramBot.sendMessage(userId, 'Bienvenue sur le bot de vente de tickets ! Tapez "menu" pour commencer.');
