@@ -573,12 +573,15 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             
             console.log('Colonnes de paiement disponibles:', hasPaymentColumns);
             
+            // Générer la date actuelle pour la réservation
+            const currentDate = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
+
             if (hasPaymentColumns) {
               // Version avec colonnes de paiement
               insertResult = db.prepare(`
                 INSERT INTO reservations 
-                (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, payment_reference, payment_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, payment_reference, payment_status, date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `).run(
                 fullName,
                 username,
@@ -592,14 +595,15 @@ telegramBot.on('callback_query', async (callbackQuery) => {
                 reference,
                 reference,
                 reference,
-                'paid'
+                'paid',
+                currentDate
               );
             } else {
               // Version sans colonnes de paiement
               insertResult = db.prepare(`
                 INSERT INTO reservations 
                 (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `).run(
                 fullName,
                 username,
@@ -611,16 +615,18 @@ telegramBot.on('callback_query', async (callbackQuery) => {
                 session.totalPrice,
                 'telegram',
                 reference,
-                reference
+                reference,
+                currentDate
               );
             }
           } catch (sqlError) {
             console.error('Erreur SQL lors de l\'insertion de la réservation:', sqlError);
             // Fallback avec une version minimale sans vérification de colonnes
+            const currentDate = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
             insertResult = db.prepare(`
               INSERT INTO reservations 
               (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, date)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
               fullName,
               username,
@@ -629,16 +635,57 @@ telegramBot.on('callback_query', async (callbackQuery) => {
               session.category.name,
               session.quantity,
               session.category.price,
-              session.totalPrice
+              session.totalPrice,
+              currentDate // Ajouter le paramètre manquant pour la date
             );
           }
           
-          // Mettre à jour le nombre de places disponibles
+          // Mettre à jour le nombre de places disponibles (total et par catégorie)
           try {
-            const updatedEventInfo = db.prepare('SELECT available_seats FROM events WHERE id = ?').get(session.event.id);
-            if (updatedEventInfo && typeof updatedEventInfo.available_seats === 'number') {
-              const newAvailableSeats = Math.max(0, updatedEventInfo.available_seats - session.quantity);
+            // Récupérer l'événement avec les données actuelles
+            const event = db.prepare('SELECT * FROM events WHERE id = ?').get(session.event.id);
+            if (!event) {
+              throw new Error(`Événement avec l'ID ${session.event.id} introuvable`);
+            }
+            
+            // Mise à jour du nombre total de places disponibles
+            if (typeof event.available_seats === 'number') {
+              const newAvailableSeats = Math.max(0, event.available_seats - session.quantity);
               db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
+              console.log(`[Bot] Nombre total de places mis à jour pour l'événement #${session.event.id}: ${event.available_seats} -> ${newAvailableSeats}`);
+            }
+            
+            // Mise à jour de la quantité spécifique à la catégorie
+            const categoriesStr = event.categories;
+            if (categoriesStr) {
+              try {
+                let categories = JSON.parse(categoriesStr);
+                const categoryIndex = categories.findIndex(cat => cat.name === session.category.name);
+                
+                if (categoryIndex !== -1) {
+                  const cat = categories[categoryIndex];
+                  const qtyBefore = cat.quantite !== undefined ? cat.quantite : (cat.quantity !== undefined ? cat.quantity : 0);
+                  
+                  // Mise à jour de la quantité (gestion des deux noms de propriété possibles: quantite ou quantity)
+                  if (cat.quantite !== undefined) {
+                    cat.quantite = Math.max(0, cat.quantite - session.quantity);
+                    console.log(`[Bot] Quantité ('quantite') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantite}`);
+                  } else if (cat.quantity !== undefined) {
+                    cat.quantity = Math.max(0, cat.quantity - session.quantity);
+                    console.log(`[Bot] Quantité ('quantity') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantity}`);
+                  }
+                  
+                  // Sauvegarder les catégories mises à jour
+                  const updateResult = db.prepare('UPDATE events SET categories = ? WHERE id = ?').run(JSON.stringify(categories), session.event.id);
+                  console.log(`[Bot] Catégorie mise à jour pour l'événement #${session.event.id}:`, { updateResult });
+                } else {
+                  console.error(`[Bot] Catégorie ${session.category.name} introuvable dans l'événement #${session.event.id}`);
+                }
+              } catch (jsonError) {
+                console.error('Erreur lors du traitement JSON des catégories:', jsonError);
+              }
+            } else {
+              console.error(`[Bot] Aucune catégorie trouvée pour l'événement #${session.event.id}`);
             }
           } catch (updateError) {
             console.error('Erreur lors de la mise à jour des places disponibles:', updateError);
