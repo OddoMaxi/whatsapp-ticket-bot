@@ -542,19 +542,22 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       await telegramBot.sendMessage(chatId, 'Vérification du statut de votre paiement...');
 
       try {
-        console.log('Appel au service chapchapPay.checkPaymentStatus avec référence:', reference);
-        // Vérifier le statut du paiement
-        const paymentStatus = await chapchapPay.checkPaymentStatus(reference);
-        console.log('Réponse du statut de paiement:', JSON.stringify(paymentStatus));
-        const Database = require('better-sqlite3');
-        const db = new Database(__dirname + '/data.sqlite');
-
-        // Vérifier que le paiement est validé avant de générer les tickets
-        if (paymentStatus.status === 'success' || paymentStatus.status === 'completed' || paymentStatus.status === 'paid') {
-          // Mettre à jour l'état de la session pour éviter tout double envoi
-          session.step = 'paid';
-          paymentSessions.set(userId, session);
-          console.log('Paiement confirmé avec le statut:', paymentStatus.status);
+        // Récupérer l'événement avec les données actuelles
+        const event = db.prepare('SELECT * FROM events WHERE id = ?').get(session.event.id);
+        if (!event) {
+          throw new Error(`Événement avec l'ID ${session.event.id} introuvable`);
+        }
+        
+        // Mise à jour du nombre total de places disponibles
+        if (typeof event.available_seats === 'number') {
+          const newAvailableSeats = Math.max(0, event.available_seats - session.quantity);
+          db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
+          console.log(`[Bot] Nombre total de places mis à jour pour l'événement #${session.event.id}: ${event.available_seats} -> ${newAvailableSeats}`);
+        }
+        
+        // Mise à jour de la quantité spécifique à la catégorie
+        const categoriesStr = event.categories;
+        if (categoriesStr) {
           // Paiement réussi, procéder à la création des tickets
           await telegramBot.sendMessage(chatId, 'Paiement confirmé ! Génération de vos tickets en cours...');
           
@@ -575,6 +578,10 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             
             // Générer la date actuelle pour la réservation
             const currentDate = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
+            
+            // Générer un code QR unique à 7 chiffres pour le ticket principal
+            const qrCode = chapchapPay.generateQRCode();
+            console.log(`[Bot] Nouveau QR code généré pour le ticket principal : ${qrCode}`);
 
             if (hasPaymentColumns) {
               // Version avec colonnes de paiement
@@ -593,7 +600,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
                 session.totalPrice,
                 'telegram',
                 reference,
-                reference,
+                qrCode,    // Utiliser un code QR unique à 7 chiffres au lieu de la référence
                 reference,
                 'paid',
                 currentDate
@@ -615,7 +622,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
                 session.totalPrice,
                 'telegram',
                 reference,
-                reference,
+                qrCode,    // Utiliser un code QR unique à 7 chiffres au lieu de la référence
                 currentDate
               );
             }
@@ -713,13 +720,17 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             
             // Générer les tickets supplémentaires
             for (let i = 1; i < session.quantity; i++) {
+              // Générer un nouveau code QR unique à 7 chiffres pour chaque ticket supplémentaire
+              const additionalQRCode = chapchapPay.generateQRCode();
+              console.log(`[Bot] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
+              
               db.prepare(`
                 INSERT INTO additional_tickets (reservation_id, formatted_id, qr_code, ticket_number)
                 VALUES (?, ?, ?, ?)
               `).run(
                 insertResult.lastInsertRowid,
                 `${reference}-${i+1}`,
-                chapchapPay.generateTransactionId(),
+                additionalQRCode, // Utiliser un code QR unique à 7 chiffres pour chaque ticket supplémentaire
                 i+1
               );
             }
