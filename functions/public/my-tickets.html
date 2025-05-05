@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mes Tickets - Système de Billetterie</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome pour les icônes -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .ticket-card {
+            transition: all 0.3s ease;
+        }
+        .ticket-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .modal {
+            transition: opacity 0.25s ease;
+        }
+        body.modal-active {
+            overflow-x: hidden;
+            overflow-y: visible !important;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+    <!-- En-tête -->
+    <header class="bg-indigo-600 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <i class="fas fa-ticket-alt text-2xl mr-3"></i>
+                    <h1 class="text-2xl font-bold">Système de Billetterie</h1>
+                </div>
+                <div>
+                    <button id="logout-btn" class="hidden px-4 py-2 bg-white text-indigo-600 rounded-lg shadow hover:bg-gray-100 transition">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Déconnexion
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Conteneur principal -->
+    <main class="container mx-auto px-4 py-10">
+        <!-- Section de connexion (visible initialement) -->
+        <section id="login-section" class="animate-fadeIn">
+            <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-8">
+                <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Accéder à vos tickets</h2>
+                <p class="text-gray-600 mb-8 text-center">Entrez votre email ou numéro de téléphone utilisé lors de l'achat pour voir vos tickets.</p>
+                
+                <form id="login-form" class="space-y-6">
+                    <div>
+                        <label for="identifier" class="block text-sm font-medium text-gray-700 mb-1">Email ou Téléphone</label>
+                        <input type="text" id="identifier" name="identifier" required
+                            class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    
+                    <div id="login-error" class="hidden text-red-500 text-sm font-medium"></div>
+                    
+                    <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <span id="login-btn-text">Rechercher mes tickets</span>
+                        <span id="login-spinner" class="hidden ml-2">
+                            <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </span>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Section des tickets (masquée initialement) -->
+        <section id="tickets-section" class="hidden animate-fadeIn">
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-2xl font-bold text-gray-800">Mes Tickets</h2>
+                <button id="refresh-btn" class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition">
+                    <i class="fas fa-sync-alt mr-2"></i>Actualiser
+                </button>
+            </div>
+            
+            <div id="tickets-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Les tickets seront ajoutés ici dynamiquement -->
+                <div class="ticket-loading animate-pulse">
+                    <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                        <div class="h-32 bg-gray-200"></div>
+                        <div class="p-6 space-y-4">
+                            <div class="h-6 bg-gray-200 rounded-md"></div>
+                            <div class="h-4 bg-gray-200 rounded-md w-3/4"></div>
+                            <div class="h-4 bg-gray-200 rounded-md w-1/2"></div>
+                            <div class="h-10 bg-gray-200 rounded-md"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="ticket-loading animate-pulse">
+                    <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                        <div class="h-32 bg-gray-200"></div>
+                        <div class="p-6 space-y-4">
+                            <div class="h-6 bg-gray-200 rounded-md"></div>
+                            <div class="h-4 bg-gray-200 rounded-md w-3/4"></div>
+                            <div class="h-4 bg-gray-200 rounded-md w-1/2"></div>
+                            <div class="h-10 bg-gray-200 rounded-md"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="no-tickets-message" class="hidden text-center py-10">
+                <i class="fas fa-ticket-alt text-gray-300 text-6xl mb-4"></i>
+                <h3 class="text-xl font-medium text-gray-500">Aucun ticket trouvé</h3>
+                <p class="text-gray-400">Vous n'avez pas encore acheté de tickets.</p>
+            </div>
+        </section>
+
+        <!-- Modal pour afficher un ticket individuel -->
+        <div id="ticket-modal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+            <div class="modal-overlay absolute w-full h-full bg-gray-900 opacity-50"></div>
+            
+            <div class="modal-container bg-white w-11/12 md:max-w-md mx-auto rounded-lg shadow-lg z-50 overflow-y-auto">
+                <div class="modal-content py-4 text-left px-6">
+                    <!-- En-tête du modal -->
+                    <div class="flex justify-between items-center pb-3">
+                        <p class="text-2xl font-bold text-gray-800">Détail du Ticket</p>
+                        <div class="modal-close cursor-pointer z-50">
+                            <i class="fas fa-times text-gray-500 hover:text-gray-800"></i>
+                        </div>
+                    </div>
+
+                    <!-- Contenu du modal -->
+                    <div id="ticket-modal-content" class="space-y-6">
+                        <div id="ticket-image-container" class="flex justify-center">
+                            <img id="ticket-image" src="" alt="Ticket" class="rounded-lg shadow-md max-w-full">
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <p class="text-gray-700"><span class="font-semibold">Événement:</span> <span id="modal-event-name"></span></p>
+                            <p class="text-gray-700"><span class="font-semibold">Catégorie:</span> <span id="modal-category-name"></span></p>
+                            <p class="text-gray-700"><span class="font-semibold">Référence:</span> <span id="modal-reference"></span></p>
+                            <p class="text-gray-700"><span class="font-semibold">Acheté le:</span> <span id="modal-purchase-date"></span></p>
+                            <p class="text-gray-700"><span class="font-semibold">Prix:</span> <span id="modal-price"></span> F CFA</p>
+                        </div>
+                        
+                        <div class="flex flex-col space-y-2">
+                            <a id="download-ticket-btn" href="#" class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <i class="fas fa-download mr-2"></i> Télécharger
+                            </a>
+                            <button class="modal-close w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <i class="fas fa-times mr-2"></i> Fermer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Pied de page -->
+    <footer class="bg-gray-800 text-white py-8 mt-auto">
+        <div class="container mx-auto px-4">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <h3 class="text-lg font-semibold">Système de Billetterie</h3>
+                    <p class="text-gray-400 text-sm">La solution simple pour vos événements</p>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="#" class="text-gray-400 hover:text-white transition">
+                        <i class="fab fa-facebook-f"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition">
+                        <i class="fab fa-twitter"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition">
+                        <i class="fab fa-instagram"></i>
+                    </a>
+                </div>
+            </div>
+            <hr class="border-gray-700 my-6">
+            <p class="text-center text-gray-400 text-sm">© 2025 Système de Billetterie. Tous droits réservés.</p>
+        </div>
+    </footer>
+
+    <!-- Script pour le fonctionnement de la page -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Éléments DOM
+            const loginSection = document.getElementById('login-section');
+            const ticketsSection = document.getElementById('tickets-section');
+            const loginForm = document.getElementById('login-form');
+            const loginError = document.getElementById('login-error');
+            const loginBtnText = document.getElementById('login-btn-text');
+            const loginSpinner = document.getElementById('login-spinner');
+            const logoutBtn = document.getElementById('logout-btn');
+            const refreshBtn = document.getElementById('refresh-btn');
+            const ticketsContainer = document.getElementById('tickets-container');
+            const noTicketsMessage = document.getElementById('no-tickets-message');
+            const ticketModal = document.getElementById('ticket-modal');
+            const ticketImage = document.getElementById('ticket-image');
+            const modalEventName = document.getElementById('modal-event-name');
+            const modalCategoryName = document.getElementById('modal-category-name');
+            const modalReference = document.getElementById('modal-reference');
+            const modalPurchaseDate = document.getElementById('modal-purchase-date');
+            const modalPrice = document.getElementById('modal-price');
+            const downloadTicketBtn = document.getElementById('download-ticket-btn');
+            const modalCloseButtons = document.querySelectorAll('.modal-close');
+            const ticketLoadingElements = document.querySelectorAll('.ticket-loading');
+
+            // Vérifier si l'utilisateur est déjà connecté (cookie présent)
+            checkLoginStatus();
+
+            // Gestionnaire d'événements pour le formulaire de connexion
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const identifier = document.getElementById('identifier').value.trim();
+                
+                if (!identifier) {
+                    displayLoginError('Veuillez saisir un email ou un numéro de téléphone.');
+                    return;
+                }
+                
+                // Déterminer si l'identifiant est un email ou un téléphone
+                const isEmail = identifier.includes('@');
+                
+                // Afficher le spinner de chargement
+                loginBtnText.classList.add('hidden');
+                loginSpinner.classList.remove('hidden');
+                loginError.classList.add('hidden');
+                
+                try {
+                    const response = await fetch('/my-tickets/api/user/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            email: isEmail ? identifier : '',
+                            phone: !isEmail ? identifier : ''
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Connexion réussie, afficher les tickets
+                        loginSection.classList.add('hidden');
+                        ticketsSection.classList.remove('hidden');
+                        logoutBtn.classList.remove('hidden');
+                        loadTickets();
+                    } else {
+                        // Afficher le message d'erreur
+                        displayLoginError(data.message || 'Erreur de connexion.');
+                    }
+                } catch (error) {
+                    console.error('Erreur:', error);
+                    displayLoginError('Une erreur s\'est produite. Veuillez réessayer plus tard.');
+                } finally {
+                    // Masquer le spinner de chargement
+                    loginBtnText.classList.remove('hidden');
+                    loginSpinner.classList.add('hidden');
+                }
+            });
+
+            // Gestionnaire d'événements pour le bouton de déconnexion
+            logoutBtn.addEventListener('click', async function() {
+                try {
+                    await fetch('/my-tickets/api/user/logout', {
+                        method: 'POST'
+                    });
+                    
+                    // Rediriger vers la page de connexion
+                    window.location.reload();
+                } catch (error) {
+                    console.error('Erreur lors de la déconnexion:', error);
+                }
+            });
+
+            // Gestionnaire d'événements pour le bouton d'actualisation
+            refreshBtn.addEventListener('click', function() {
+                loadTickets();
+            });
+
+            // Gestionnaire d'événements pour les boutons de fermeture du modal
+            modalCloseButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    closeModal();
+                });
+            });
+
+            // Fonctions
+
+            // Vérifier si l'utilisateur est déjà connecté
+            async function checkLoginStatus() {
+                try {
+                    const response = await fetch('/my-tickets/api/user/tickets');
+                    
+                    if (response.ok) {
+                        // L'utilisateur est connecté
+                        loginSection.classList.add('hidden');
+                        ticketsSection.classList.remove('hidden');
+                        logoutBtn.classList.remove('hidden');
+                        loadTickets();
+                    } else {
+                        // L'utilisateur n'est pas connecté, afficher la section de connexion
+                        loginSection.classList.remove('hidden');
+                        ticketsSection.classList.add('hidden');
+                        logoutBtn.classList.add('hidden');
+                    }
+                } catch (error) {
+                    console.error('Erreur lors de la vérification du statut de connexion:', error);
+                }
+            }
+
+            // Charger les tickets de l'utilisateur
+            async function loadTickets() {
+                // Afficher les éléments de chargement
+                ticketsContainer.innerHTML = '';
+                for (let i = 0; i < 3; i++) {
+                    const loadingClone = ticketLoadingElements[0].cloneNode(true);
+                    ticketsContainer.appendChild(loadingClone);
+                }
+                
+                noTicketsMessage.classList.add('hidden');
+                
+                try {
+                    const response = await fetch('/my-tickets/api/user/tickets');
+                    const data = await response.json();
+                    
+                    // Vider le conteneur des tickets
+                    ticketsContainer.innerHTML = '';
+                    
+                    if (data.success && data.tickets && data.tickets.length > 0) {
+                        // Afficher les tickets
+                        data.tickets.forEach(ticket => {
+                            ticketsContainer.appendChild(createTicketCard(ticket));
+                        });
+                    } else {
+                        // Aucun ticket trouvé
+                        noTicketsMessage.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    console.error('Erreur lors du chargement des tickets:', error);
+                    ticketsContainer.innerHTML = `
+                        <div class="col-span-full text-center py-8">
+                            <p class="text-red-500">Une erreur s'est produite lors du chargement des tickets.</p>
+                            <button id="retry-btn" class="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                                <i class="fas fa-redo mr-2"></i>Réessayer
+                            </button>
+                        </div>
+                    `;
+                    
+                    document.getElementById('retry-btn').addEventListener('click', loadTickets);
+                }
+            }
+
+            // Créer une carte de ticket
+            function createTicketCard(ticket) {
+                const card = document.createElement('div');
+                card.className = 'ticket-card bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition';
+                
+                card.innerHTML = `
+                    <div class="bg-indigo-600 p-4 text-white">
+                        <h3 class="font-bold text-lg truncate">${ticket.eventName}</h3>
+                        <p class="opacity-80 text-sm">${ticket.categoryName}</p>
+                    </div>
+                    <div class="p-5 space-y-4">
+                        <div class="flex justify-between">
+                            <div>
+                                <p class="text-xs text-gray-500">Référence</p>
+                                <p class="font-medium">${ticket.reference}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Quantité</p>
+                                <p class="font-medium text-center">${ticket.quantity}</p>
+                            </div>
+                        </div>
+                        <div class="flex justify-between">
+                            <div>
+                                <p class="text-xs text-gray-500">Date d'achat</p>
+                                <p class="font-medium">${ticket.purchaseDate}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Prix</p>
+                                <p class="font-medium">${ticket.totalPrice} F CFA</p>
+                            </div>
+                        </div>
+                        <div class="pt-3">
+                            <button class="view-tickets-btn w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-medium py-2 px-4 rounded-lg transition" data-id="${ticket.id}">
+                                <i class="fas fa-eye mr-2"></i>Voir les tickets (${ticket.totalCount})
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // Ajouter un gestionnaire d'événements pour le bouton de visualisation des tickets
+                card.querySelector('.view-tickets-btn').addEventListener('click', function() {
+                    const ticketId = this.getAttribute('data-id');
+                    viewTicket(ticketId);
+                });
+                
+                return card;
+            }
+
+            // Afficher un ticket spécifique
+            async function viewTicket(ticketId) {
+                try {
+                    const response = await fetch(`/my-tickets/api/user/tickets/${ticketId}`);
+                    const data = await response.json();
+                    
+                    if (data.success && data.ticket) {
+                        const ticket = data.ticket;
+                        
+                        // Remplir les informations du modal
+                        modalEventName.textContent = ticket.eventName;
+                        modalCategoryName.textContent = ticket.categoryName;
+                        modalReference.textContent = ticket.reference;
+                        modalPurchaseDate.textContent = ticket.purchaseDate;
+                        modalPrice.textContent = ticket.unitPrice;
+                        
+                        // Configurer le bouton de téléchargement
+                        downloadTicketBtn.href = `/my-tickets/api/user/tickets/${ticketId}/download`;
+                        
+                        // Afficher le ticket sous forme d'image (à implémenter)
+                        // Pour l'instant, on utilise l'API pour générer une image à la volée
+                        ticketImage.src = `/my-tickets/api/user/tickets/${ticketId}/download`;
+                        
+                        // Ouvrir le modal
+                        openModal();
+                    } else {
+                        alert(data.message || 'Ticket non trouvé.');
+                    }
+                } catch (error) {
+                    console.error('Erreur lors de l\'affichage du ticket:', error);
+                    alert('Une erreur s\'est produite lors de l\'affichage du ticket.');
+                }
+            }
+
+            // Afficher une erreur de connexion
+            function displayLoginError(message) {
+                loginError.textContent = message;
+                loginError.classList.remove('hidden');
+            }
+
+            // Ouvrir le modal
+            function openModal() {
+                ticketModal.classList.remove('opacity-0', 'pointer-events-none');
+                document.body.classList.add('modal-active');
+            }
+
+            // Fermer le modal
+            function closeModal() {
+                ticketModal.classList.add('opacity-0', 'pointer-events-none');
+                document.body.classList.remove('modal-active');
+            }
+        });
+    </script>
+</body>
+</html>

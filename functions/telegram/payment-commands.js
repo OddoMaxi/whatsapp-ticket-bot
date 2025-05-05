@@ -315,12 +315,35 @@ async function handleCheckPayment(ctx) {
         chapchapPay.generateTransactionId()
       );
       
-      // Mettre à jour le nombre de places disponibles
+      // Mettre à jour le nombre de places disponibles (total et par catégorie)
       try {
-        const updatedEventInfo = db.prepare('SELECT available_seats FROM events WHERE id = ?').get(session.event.id);
-        if (updatedEventInfo && typeof updatedEventInfo.available_seats === 'number') {
-          const newAvailableSeats = Math.max(0, updatedEventInfo.available_seats - session.quantity);
-          db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
+        // Mettre à jour le nombre total de places disponibles
+        const updatedEventInfo = db.prepare('SELECT available_seats, categories FROM events WHERE id = ?').get(session.event.id);
+        if (updatedEventInfo) {
+          // Mise à jour du total des places disponibles
+          if (typeof updatedEventInfo.available_seats === 'number') {
+            const newAvailableSeats = Math.max(0, updatedEventInfo.available_seats - session.quantity);
+            db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
+          }
+          
+          // Mise à jour de la quantité spécifique à la catégorie
+          if (updatedEventInfo.categories) {
+            const categories = JSON.parse(updatedEventInfo.categories);
+            const categoryIndex = categories.findIndex(cat => cat.name === session.category.name);
+            
+            if (categoryIndex !== -1) {
+              // Mise à jour de la quantité (gestion des deux noms de propriété possibles: quantite ou quantity)
+              if (categories[categoryIndex].quantite !== undefined) {
+                categories[categoryIndex].quantite = Math.max(0, categories[categoryIndex].quantite - session.quantity);
+              } else if (categories[categoryIndex].quantity !== undefined) {
+                categories[categoryIndex].quantity = Math.max(0, categories[categoryIndex].quantity - session.quantity);
+              }
+              
+              // Sauvegarder les catégories mises à jour
+              db.prepare('UPDATE events SET categories = ? WHERE id = ?').run(JSON.stringify(categories), session.event.id);
+              console.log(`[Telegram] Catégorie mise à jour pour l'événement #${session.event.id}: ${session.category.name}, -${session.quantity} places`);
+            }
+          }
         }
       } catch (updateError) {
         console.error('Erreur lors de la mise à jour des places disponibles:', updateError);
