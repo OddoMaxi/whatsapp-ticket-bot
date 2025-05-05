@@ -296,6 +296,10 @@ async function handleCheckPayment(ctx) {
         payment_method: paymentStatus.payment_method
       };
       
+      // Générer un code QR unique de 7 chiffres pour le ticket principal
+      const qrCode = chapchapPay.generateQRCode();
+      console.log(`[Telegram] Nouveau QR code généré pour le ticket principal : ${qrCode}`);
+      
       // Insérer la réservation
       const insertResult = db.prepare(`
         INSERT INTO reservations 
@@ -312,38 +316,55 @@ async function handleCheckPayment(ctx) {
         reservationData.total_price,
         reservationData.purchase_channel,
         reference,
-        chapchapPay.generateTransactionId()
+        qrCode // Code QR unique pour le ticket principal
       );
       
       // Mettre à jour le nombre de places disponibles (total et par catégorie)
       try {
-        // Mettre à jour le nombre total de places disponibles
-        const updatedEventInfo = db.prepare('SELECT available_seats, categories FROM events WHERE id = ?').get(session.event.id);
-        if (updatedEventInfo) {
-          // Mise à jour du total des places disponibles
-          if (typeof updatedEventInfo.available_seats === 'number') {
-            const newAvailableSeats = Math.max(0, updatedEventInfo.available_seats - session.quantity);
-            db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
-          }
-          
-          // Mise à jour de la quantité spécifique à la catégorie
-          if (updatedEventInfo.categories) {
-            const categories = JSON.parse(updatedEventInfo.categories);
+        // Récupérer l'événement avec les données actuelles
+        const event = db.prepare('SELECT * FROM events WHERE id = ?').get(session.event.id);
+        if (!event) {
+          throw new Error(`Événement avec l'ID ${session.event.id} introuvable`);
+        }
+        
+        // Mise à jour du nombre total de places disponibles
+        if (typeof event.available_seats === 'number') {
+          const newAvailableSeats = Math.max(0, event.available_seats - session.quantity);
+          db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
+          console.log(`[Telegram] Nombre total de places mis à jour pour l'événement #${session.event.id}: ${event.available_seats} -> ${newAvailableSeats}`);
+        }
+        
+        // Mise à jour de la quantité spécifique à la catégorie
+        const categoriesStr = event.categories;
+        if (categoriesStr) {
+          try {
+            let categories = JSON.parse(categoriesStr);
             const categoryIndex = categories.findIndex(cat => cat.name === session.category.name);
             
             if (categoryIndex !== -1) {
+              const cat = categories[categoryIndex];
+              const qtyBefore = cat.quantite !== undefined ? cat.quantite : (cat.quantity !== undefined ? cat.quantity : 0);
+              
               // Mise à jour de la quantité (gestion des deux noms de propriété possibles: quantite ou quantity)
-              if (categories[categoryIndex].quantite !== undefined) {
-                categories[categoryIndex].quantite = Math.max(0, categories[categoryIndex].quantite - session.quantity);
-              } else if (categories[categoryIndex].quantity !== undefined) {
-                categories[categoryIndex].quantity = Math.max(0, categories[categoryIndex].quantity - session.quantity);
+              if (cat.quantite !== undefined) {
+                cat.quantite = Math.max(0, cat.quantite - session.quantity);
+                console.log(`[Telegram] Quantité ('quantite') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantite}`);
+              } else if (cat.quantity !== undefined) {
+                cat.quantity = Math.max(0, cat.quantity - session.quantity);
+                console.log(`[Telegram] Quantité ('quantity') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantity}`);
               }
               
               // Sauvegarder les catégories mises à jour
-              db.prepare('UPDATE events SET categories = ? WHERE id = ?').run(JSON.stringify(categories), session.event.id);
-              console.log(`[Telegram] Catégorie mise à jour pour l'événement #${session.event.id}: ${session.category.name}, -${session.quantity} places`);
+              const updateResult = db.prepare('UPDATE events SET categories = ? WHERE id = ?').run(JSON.stringify(categories), session.event.id);
+              console.log(`[Telegram] Catégorie mise à jour pour l'événement #${session.event.id}:`, { updateResult });
+            } else {
+              console.error(`[Telegram] Catégorie ${session.category.name} introuvable dans l'événement #${session.event.id}`);
             }
+          } catch (jsonError) {
+            console.error('Erreur lors du traitement JSON des catégories:', jsonError);
           }
+        } else {
+          console.error(`[Telegram] Aucune catégorie trouvée pour l'événement #${session.event.id}`);
         }
       } catch (updateError) {
         console.error('Erreur lors de la mise à jour des places disponibles:', updateError);
@@ -371,13 +392,17 @@ async function handleCheckPayment(ctx) {
         
         // Générer les tickets supplémentaires
         for (let i = 1; i < session.quantity; i++) {
+          // Générer un nouveau code QR unique pour chaque ticket supplémentaire
+          const additionalQRCode = chapchapPay.generateQRCode();
+          console.log(`[Telegram] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
+          
           db.prepare(`
             INSERT INTO additional_tickets (reservation_id, formatted_id, qr_code, ticket_number)
             VALUES (?, ?, ?, ?)
           `).run(
             insertResult.lastInsertRowid,
             `${reference}-${i+1}`,
-            chapchapPay.generateTransactionId(),
+            additionalQRCode, // Code QR unique pour chaque ticket supplémentaire
             i+1
           );
         }

@@ -32,6 +32,15 @@ function generateTransactionId() {
 }
 
 /**
+ * Génère un code QR unique de 7 chiffres pour les tickets
+ * @returns {string} Code QR à 7 chiffres
+ */
+function generateQRCode() {
+  // Générer un nombre aléatoire à 7 chiffres (1000000 à 9999999)
+  return Math.floor(1000000 + Math.random() * 9000000).toString();
+}
+
+/**
  * Génère un lien de paiement ChapChap Pay
  * 
  * @param {Object} paymentData Données du paiement
@@ -126,5 +135,6 @@ async function checkPaymentStatus(operationReference) {
 module.exports = {
   generatePaymentLink,
   checkPaymentStatus,
-  generateTransactionId
+  generateTransactionId,
+  generateQRCode
 };
