@@ -542,6 +542,33 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       await telegramBot.sendMessage(chatId, 'Vérification du statut de votre paiement...');
 
       try {
+        console.log('Appel au service chapchapPay.checkPaymentStatus avec référence:', reference);
+        // Vérifier le statut du paiement
+        const paymentStatus = await chapchapPay.checkPaymentStatus(reference);
+        console.log('Réponse du statut de paiement:', JSON.stringify(paymentStatus));
+        
+        // Initier la connexion à la base de données
+        const Database = require('better-sqlite3');
+        const db = new Database(__dirname + '/data.sqlite');
+        console.log('Connexion à la base de données établie');
+        
+        // Vérifier que le paiement est validé avant de générer les tickets
+        if (paymentStatus.status !== 'success' && paymentStatus.status !== 'completed' && paymentStatus.status !== 'paid') {
+          // Paiement non validé
+          await telegramBot.sendMessage(
+            chatId,
+            `Votre paiement est en cours de traitement.\n` +
+            `Statut actuel : ${paymentStatus.status_description || paymentStatus.status}\n` +
+            `Veuillez réessayer dans quelques instants.`
+          );
+          return;
+        }
+        
+        // Mettre à jour l'état de la session pour éviter tout double envoi
+        session.step = 'paid';
+        paymentSessions.set(userId, session);
+        console.log('Paiement confirmé avec le statut:', paymentStatus.status);
+        
         // Récupérer l'événement avec les données actuelles
         const event = db.prepare('SELECT * FROM events WHERE id = ?').get(session.event.id);
         if (!event) {
