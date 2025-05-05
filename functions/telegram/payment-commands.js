@@ -300,11 +300,14 @@ async function handleCheckPayment(ctx) {
       const qrCode = chapchapPay.generateQRCode();
       console.log(`[Telegram] Nouveau QR code généré pour le ticket principal : ${qrCode}`);
       
-      // Insérer la réservation
+      // Ajouter la date actuelle pour la réservation
+      const currentDate = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
+      
+      // Insérer la réservation avec le champ date
       const insertResult = db.prepare(`
         INSERT INTO reservations 
-        (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         reservationData.user,
         reservationData.phone,
@@ -316,7 +319,8 @@ async function handleCheckPayment(ctx) {
         reservationData.total_price,
         reservationData.purchase_channel,
         reference,
-        qrCode // Code QR unique pour le ticket principal
+        qrCode, // Code QR unique pour le ticket principal
+        currentDate // Date de la réservation
       );
       
       // Mettre à jour le nombre de places disponibles (total et par catégorie)
