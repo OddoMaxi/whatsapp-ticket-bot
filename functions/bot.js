@@ -745,211 +745,147 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           
           // Vérifier et ajouter les colonnes nécessaires à la table reservations si elles n'existent pas
           try {
-            // Vérifier si les colonnes parent_reference et ticket_number existent
+            // Vérifier si la colonne order_reference existe pour lier tous les tickets d'une même commande
             const columns = db.prepare("PRAGMA table_info(reservations)").all();
-            const hasParentReference = columns.some(col => col.name === 'parent_reference');
-            const hasTicketNumber = columns.some(col => col.name === 'ticket_number');
+            const hasOrderReference = columns.some(col => col.name === 'order_reference');
             
-            // Ajouter les colonnes manquantes si nécessaire
-            if (!hasParentReference) {
-              console.log('[Bot] Ajout de la colonne parent_reference à la table reservations');
-              db.prepare("ALTER TABLE reservations ADD COLUMN parent_reference TEXT").run();
-            }
-            
-            if (!hasTicketNumber) {
-              console.log('[Bot] Ajout de la colonne ticket_number INTEGER à la table reservations');
-              db.prepare("ALTER TABLE reservations ADD COLUMN ticket_number INTEGER").run();
+            // Ajouter la colonne order_reference si nécessaire
+            if (!hasOrderReference) {
+              console.log('[Bot] Ajout de la colonne order_reference à la table reservations');
+              db.prepare("ALTER TABLE reservations ADD COLUMN order_reference TEXT").run();
             }
           } catch (schemaError) {
             console.error('[Bot] Erreur lors de la vérification/modification du schéma:', schemaError);
           }
           
-          // Ajouter un identifiant de groupe pour cette réservation (pour lier tous les tickets ensemble)
-          const groupId = chapchapPay.generateTransactionId();
-          console.log(`[Bot] ID de groupe généré pour la réservation : ${groupId}`);
+          // Créer une référence de commande unique pour relier tous les tickets
+          const orderReference = chapchapPay.generateTransactionId();
+          console.log(`[Bot] Référence de commande générée : ${orderReference}`);
           
-          // Générer les tickets supplémentaires directement dans la table reservations
-          console.log('DEBUG: Vérification quantité pour tickets supplémentaires:', session.quantity, typeof session.quantity);
-          // Convertir explicitement en nombre entier pour s'assurer que la comparaison fonctionne
+          // On convertit explicitement la quantité en nombre entier
           const ticketQuantity = parseInt(session.quantity, 10);
-          if (ticketQuantity > 1) {
-            console.log(`[Bot] Génération de ${ticketQuantity - 1} tickets supplémentaires`);
+          console.log(`[Bot] Génération de ${ticketQuantity} tickets pour la commande ${orderReference}`);
+          
+          // Seuls les paiements validés génèrent des tickets
+          if (paymentStatus.status === 'success' || paymentStatus.status === 'completed') {
+            // Générer tous les tickets individuellement avec un QR code unique
+            const generatedTickets = [];
             
-            // Générer les tickets supplémentaires dans la même table que le ticket principal
-            for (let i = 1; i < ticketQuantity; i++) {
+            for (let i = 0; i < ticketQuantity; i++) {
               try {
-                // Générer un nouveau code QR unique pour chaque ticket supplémentaire
-                const additionalQRCode = chapchapPay.generateQRCode();
-                console.log(`[Bot] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
+                // Générer un QR code unique pour chaque ticket
+                const uniqueQRCode = chapchapPay.generateQRCode();
+                const ticketNumber = i + 1;
+                const formattedTicketId = `${orderReference}-${ticketNumber}`;
                 
-                // Préparer la requête SQL en fonction des colonnes disponibles
-                let sql = `
+                console.log(`[Bot] Génération du ticket #${ticketNumber} avec QR code: ${uniqueQRCode}`);
+                
+                // Préparer la requête SQL avec la colonne order_reference
+                const sql = `
                   INSERT INTO reservations 
-                  (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, date
+                  (user, phone, event_id, event_name, category_name, quantity, unit_price, 
+                   total_price, purchase_channel, formatted_id, qr_code, date, order_reference)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `;
                 
-                // Ajouter les colonnes optionnelles si elles existent
-                sql += `, parent_reference, ticket_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-                
-                // Insérer chaque ticket supplémentaire comme une entrée complète dans la table reservations
-                const insertAdditionalResult = db.prepare(sql).run(
+                // Insérer le ticket dans la base de données
+                const insertResult = db.prepare(sql).run(
                   fullName,
                   username,
                   session.event.id,
                   session.event.name,
                   session.category.name,
-                  1, // Quantité toujours 1 car c'est un ticket individuel
+                  1, // Chaque ticket est individuel
                   session.category.price,
-                  session.category.price, // Prix total = prix unitaire pour un seul ticket
+                  session.category.price, // Prix unitaire
                   'telegram',
-                  `${reference}-${i+1}`, // ID formaté unique pour ce ticket
-                  additionalQRCode, // QR code unique à 7 chiffres pour ce ticket
+                  formattedTicketId,
+                  uniqueQRCode, // Code QR unique aléatoire
                   currentDate,
-                  reference, // Référence au ticket principal
-                  i+1 // Numéro de ticket dans le groupe
+                  orderReference // Référence commune pour tous les tickets de cette commande
                 );
                 
-                console.log(`[Bot] Ticket supplémentaire #${i+1} inséré avec succès. ID: ${insertAdditionalResult.lastInsertRowid}`);
-              } catch (additionalTicketError) {
-                console.error(`[Bot] Erreur lors de l'insertion du ticket supplémentaire #${i+1}:`, additionalTicketError);
-              }
-            }
-          } else {
-            console.log('[Bot] Aucun ticket supplémentaire à générer (quantité =', session.quantity, typeof session.quantity, ')');
-            // Forcer la génération de tickets supplémentaires si la quantité est dans la session
-            try {
-              // Convertir explicitement en nombre entier et vérifier s'il est supérieur à 1
-              const numQuantity = parseInt(session.quantity, 10);
-              console.log(`[Bot] Forçage vérification de la quantité: ${numQuantity} (${typeof numQuantity})`);
-              if (!isNaN(numQuantity) && numQuantity > 1) {
-                console.log(`[Bot] FORÇAGE de la génération de ${numQuantity - 1} tickets supplémentaires`);
+                console.log(`[Bot] Ticket #${ticketNumber} inséré avec succès. ID: ${insertResult.lastInsertRowid}`);
                 
-                // Générer les tickets supplémentaires dans la même table que le ticket principal
-                for (let i = 1; i < numQuantity; i++) {
-                  try {
-                    // Générer un nouveau code QR unique pour chaque ticket supplémentaire
-                    const additionalQRCode = chapchapPay.generateQRCode();
-                    console.log(`[Bot] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
-                    
-                    // Préparer la requête SQL en fonction des colonnes disponibles
-                    let sql = `
-                      INSERT INTO reservations 
-                      (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, date
-                    `;
-                    
-                    // Ajouter les colonnes optionnelles si elles existent
-                    sql += `, parent_reference, ticket_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-                    
-                    // Insérer chaque ticket supplémentaire comme une entrée complète dans la table reservations
-                    const insertAdditionalResult = db.prepare(sql).run(
-                      fullName,
-                      username,
-                      session.event.id,
-                      session.event.name,
-                      session.category.name,
-                      1, // Quantité toujours 1 car c'est un ticket individuel
-                      session.category.price,
-                      session.category.price, // Prix total = prix unitaire pour un seul ticket
-                      'telegram',
-                      `${reference}-${i+1}`, // ID formaté unique pour ce ticket
-                      additionalQRCode, // QR code unique à 7 chiffres pour ce ticket
-                      currentDate,
-                      reference, // Référence au ticket principal
-                      i+1 // Numéro de ticket dans le groupe
-                    );
-                    
-                    console.log(`[Bot] Ticket supplémentaire FORCÉ #${i+1} inséré avec succès. ID: ${insertAdditionalResult.lastInsertRowid}`);
-                  } catch (additionalTicketError) {
-                    console.error(`[Bot] Erreur lors de l'insertion du ticket supplémentaire FORCÉ #${i+1}:`, additionalTicketError);
-                  }
-                }
+                // Stocker les informations du ticket pour l'envoi ultérieur
+                generatedTickets.push({
+                  id: insertResult.lastInsertRowid,
+                  eventName: session.event.name,
+                  categoryName: session.category.name,
+                  price: session.category.price,
+                  formattedId: formattedTicketId,
+                  qrCode: uniqueQRCode,
+                  ticketNumber
+                });
+              } catch (ticketError) {
+                console.error(`[Bot] Erreur lors de la génération du ticket #${i+1}:`, ticketError);
               }
-            } catch (forceError) {
-              console.error('[Bot] Erreur lors du forçage de la génération de tickets supplémentaires:', forceError);
             }
+            
+            // Après avoir généré tous les tickets, on les envoie à l'utilisateur
+            session.generatedTickets = generatedTickets;
+            session.orderReference = orderReference;
+            paymentSessions.set(userId, session);
+            
+            console.log(`[Bot] ${generatedTickets.length} tickets générés avec succès pour la commande ${orderReference}`);
+          } else {
+            console.log(`[Bot] Paiement non validé (status: ${paymentStatus.status}), aucun ticket généré`);
           }
           
-          // Générer et envoyer le ticket principal
+          // Référence à la fonction de génération de ticket
           const generateAndSendTicket = require('./index').generateAndSendTicket;
 
-          // LOG: trace d'appel de la génération du ticket principal
-          console.log('DEBUG: Tentative de génération du ticket principal', {
-            session,
-            insertResult,
-            reference,
-            paymentStatus
-          });
+          // Envoyer les tickets si le paiement est validé
+          if (session.step === 'paid' && session.generatedTickets && session.generatedTickets.length > 0) {
+            console.log(`[Bot] Envoi de ${session.generatedTickets.length} tickets à l'utilisateur ${fullName} (ID: ${userId})`);
 
-          // Vérification supplémentaire pour éviter le double envoi
-          if (session.step === 'paid') {
-            console.log('DEBUG: Envoi effectif du ticket principal à l\'utilisateur', {
-              chatId,
-              reservationId: insertResult.lastInsertRowid,
-              reference
-            });
             
-            // Générer et envoyer le ticket principal
-            generateAndSendTicket({
-              to: chatId,
-              channel: 'telegram',
-              eventName: session.event.name,
-              category: session.category.name,
-              reservationId: insertResult.lastInsertRowid,
-              price: session.category.price,
-              formattedId: reference,
-              qrCode: reference
-            });
-            
-            // Générer et envoyer les tickets supplémentaires, si applicable
-            const ticketQuantity = parseInt(session.quantity, 10);
-            console.log(`[Bot] Vérification d'envoi de tickets supplémentaires avec quantité: ${ticketQuantity}`);
-            if (ticketQuantity > 1) {
+            // Envoi de tous les tickets générés
+            for (const ticket of session.generatedTickets) {
               try {
-                // Récupérer les tickets supplémentaires de la base de données (dans la table reservations)
-                const additionalTickets = db.prepare(`
-                  SELECT * FROM reservations WHERE parent_reference = ? ORDER BY ticket_number
-                `).all(reference);
+                console.log(`[Bot] Envoi du ticket #${ticket.ticketNumber} avec QR code ${ticket.qrCode}`);
                 
-                console.log(`DEBUG: Génération de ${additionalTickets.length} tickets supplémentaires (récupérés depuis la table reservations)`);
+                generateAndSendTicket({
+                  to: chatId,
+                  channel: 'telegram',
+                  eventName: ticket.eventName,
+                  category: ticket.categoryName,
+                  reservationId: ticket.id,
+                  price: ticket.price,
+                  formattedId: ticket.formattedId,
+                  qrCode: ticket.qrCode
+                });
                 
-                // Générer et envoyer chaque ticket supplémentaire
-                for (const ticket of additionalTickets) {
-                  console.log(`DEBUG: Envoi du ticket supplémentaire n°${ticket.ticket_number}`, ticket);
-                  
-                  generateAndSendTicket({
-                    to: chatId,
-                    channel: 'telegram',
-                    eventName: ticket.event_name, // Utiliser les données du ticket
-                    category: ticket.category_name, // Utiliser les données du ticket
-                    reservationId: ticket.id, // ID du ticket supplémentaire
-                    price: ticket.unit_price, // Prix unitaire du ticket
-                    formattedId: ticket.formatted_id, // ID formaté du ticket supplémentaire
-                    qrCode: ticket.qr_code // QR code du ticket supplémentaire
-                  });
-                  
-                  // Petite pause entre chaque envoi pour éviter les limitations API
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-              } catch (additionalTicketError) {
-                console.error('Erreur lors de la génération des tickets supplémentaires:', additionalTicketError);
+                // Petite pause entre chaque envoi pour éviter les limitations API
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              } catch (sendError) {
+                console.error(`[Bot] Erreur lors de l'envoi du ticket ${ticket.id}:`, sendError);
               }
             }
 
             // Envoyer un message de confirmation
+            const keyboard = {
+              inline_keyboard: [
+                [{ text: '📋 Mes tickets', callback_data: 'my_tickets' }],
+                [{ text: '🎟️ Acheter plus de tickets', callback_data: 'start_purchase' }]
+              ]
+            };
+            
             await telegramBot.sendMessage(
               chatId,
-              `Vos tickets ont été générés avec succès !\n` +
-              `Référence de réservation : ${reference}\n` +
-              `Nombre de tickets : ${session.quantity}\n` +
-              `Vous pouvez les consulter et les télécharger en utilisant la commande /mestickets`
+              `🎉 Vos tickets ont été générés avec succès !\n\n` +
+              `💳 Référence de commande : ${session.orderReference}\n` +
+              `🎟️ Nombre de tickets : ${session.generatedTickets.length}\n` +
+              `🔔 Chaque ticket a un code QR unique pour l'accès`,
+              { reply_markup: keyboard }
             );
 
             // Nettoyer la session
             paymentSessions.delete(userId);
           } else {
-            // Si on arrive ici, il y a un problème d'état
-            console.log('DEBUG: Blocage génération ticket - état session incorrect', { session });
-            await telegramBot.sendMessage(chatId, 'Erreur de synchronisation de paiement. Veuillez contacter le support.');
+            // Si on arrive ici, on n'a pas généré de tickets car le paiement n'est pas validé
+            console.log('DEBUG: Pas de génération de tickets - paiement non validé', { session });
+            await telegramBot.sendMessage(chatId, 'Les tickets seront générés une fois le paiement validé.');
           }
           
         } else if (paymentStatus.status === 'pending') {
@@ -1063,35 +999,63 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       paymentSessions.set(userId, { step: 'select_event' });
     }
     else if (data === 'my_tickets') {
+      const fullName = callbackQuery.from.first_name + (callbackQuery.from.last_name ? ' ' + callbackQuery.from.last_name : '');
       const username = callbackQuery.from.username || '';
       try {
         const Database = require('better-sqlite3');
         const db = new Database(__dirname + '/data.sqlite');
         
-        // Récupérer les réservations de l'utilisateur (via l'ID Telegram ou le username)
-        const reservations = db.prepare(`
-          SELECT * FROM reservations 
-          WHERE (purchase_channel = 'telegram' AND phone = ?) 
-          ORDER BY created_at DESC
+        // Récupérer toutes les commandes (groups de tickets) de l'utilisateur
+        const orders = db.prepare(`
+          SELECT order_reference, event_name, category_name, unit_price, date, COUNT(*) as ticket_count
+          FROM reservations 
+          WHERE purchase_channel = 'telegram' AND phone = ? 
+          GROUP BY order_reference
+          ORDER BY date DESC
         `).all(username);
         
-        if (!reservations || reservations.length === 0) {
+        if (!orders || orders.length === 0) {
           return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
         }
         
-        // Envoyer un message avec la liste des tickets
-        let message = 'Voici vos tickets achetés :\n\n';
+        // Envoyer un message avec la liste des commandes et tickets
+        let message = `📋 *Vos tickets achetés*\n\n`;
         
-        reservations.forEach((reservation, index) => {
-          message += `${index + 1}. ${reservation.event_name} - ${reservation.category_name}\n`;
-          message += `   Quantité: ${reservation.quantity}\n`;
-          message += `   Prix: ${reservation.total_price} GNF\n`;
-          message += `   Référence: ${reservation.formatted_id}\n\n`;
+        orders.forEach((order, index) => {
+          const date = new Date(order.date);
+          const formattedDate = date.toLocaleDateString('fr-FR');
+          
+          message += `*Commande ${index + 1}* - ${formattedDate}\n`;
+          message += `🎭 Événement: *${order.event_name}*\n`;
+          message += `🎟️ Catégorie: ${order.category_name}\n`;
+          message += `🔢 Nombre de tickets: ${order.ticket_count}\n`;
+          message += `💰 Prix total: ${order.unit_price * order.ticket_count} GNF\n`;
+          message += `🆔 Référence: ${order.order_reference}\n\n`;
         });
         
-        message += 'Pour voir le détail d\'un ticket, utilisez /ticket suivi du numéro de la liste.';
+        message += 'Pour voir vos tickets, utilisez /tickets suivi du numéro de commande.';
         
-        telegramBot.sendMessage(chatId, message);
+        // Ajouter des boutons pour visualiser les commandes
+        const keyboard = {
+          inline_keyboard: []
+        };
+        
+        // Ajouter un bouton pour chaque commande (limité à 5 pour éviter de dépasser la limite de boutons)
+        const maxButtons = Math.min(orders.length, 5);
+        for (let i = 0; i < maxButtons; i++) {
+          keyboard.inline_keyboard.push([{
+            text: `Voir tickets commande ${i+1}`,
+            callback_data: `view_order:${i+1}`
+          }]);
+        }
+        
+        // Ajouter un bouton pour retourner au menu principal
+        keyboard.inline_keyboard.push([{
+          text: '🎭 Acheter des tickets',
+          callback_data: 'start_purchase'
+        }]);
+        
+        telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: keyboard });
         
       } catch (error) {
         console.error('Erreur lors de la récupération des tickets :', error);
@@ -1127,6 +1091,71 @@ Choisissez une option ci-dessous:`, { reply_markup: keyboard });
         ]
       };
       telegramBot.sendMessage(chatId, `Retour au menu principal. Choisissez une option ci-dessous:`, { reply_markup: keyboard });
+    }
+    
+    // Gestionnaire pour visualiser les tickets d'une commande
+    else if (data.startsWith('view_order:')) {
+      const orderIndex = parseInt(data.split(':')[1], 10) - 1; // Convertir en index basé sur 0
+      const username = callbackQuery.from.username || '';
+      
+      try {
+        const Database = require('better-sqlite3');
+        const db = new Database(__dirname + '/data.sqlite');
+        
+        // Récupérer toutes les commandes de l'utilisateur
+        const orders = db.prepare(`
+          SELECT order_reference, event_name, category_name, date
+          FROM reservations 
+          WHERE purchase_channel = 'telegram' AND phone = ? 
+          GROUP BY order_reference
+          ORDER BY date DESC
+        `).all(username);
+        
+        if (!orders || orderIndex >= orders.length) {
+          return telegramBot.sendMessage(chatId, 'Commande introuvable.');
+        }
+        
+        const selectedOrder = orders[orderIndex];
+        
+        // Récupérer tous les tickets de cette commande
+        const tickets = db.prepare(`
+          SELECT id, formatted_id, qr_code, unit_price
+          FROM reservations
+          WHERE order_reference = ?
+          ORDER BY formatted_id
+        `).all(selectedOrder.order_reference);
+        
+        if (!tickets || tickets.length === 0) {
+          return telegramBot.sendMessage(chatId, 'Aucun ticket trouvé pour cette commande.');
+        }
+        
+        // Afficher les détails de la commande et de ses tickets
+        let message = `🎟️ *Détails de la commande*\n\n`;
+        message += `🎭 Événement: *${selectedOrder.event_name}*\n`;
+        message += `🎟️ Catégorie: ${selectedOrder.category_name}\n`;
+        message += `🔢 Nombre de tickets: ${tickets.length}\n`;
+        message += `🆔 Référence: ${selectedOrder.order_reference}\n\n`;
+        message += `*Liste des tickets:*\n`;
+        
+        tickets.forEach((ticket, index) => {
+          message += `${index + 1}. Ticket ${ticket.formatted_id}\n`;
+          message += `   Code QR: ${ticket.qr_code}\n`;
+          message += `   Prix: ${ticket.unit_price} GNF\n\n`;
+        });
+        
+        // Ajouter un bouton pour retourner à la liste des commandes
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🔙 Retour aux commandes', callback_data: 'my_tickets' }],
+            [{ text: '🎭 Acheter plus de tickets', callback_data: 'start_purchase' }]
+          ]
+        };
+        
+        await telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: keyboard });
+      } catch (error) {
+        console.error('Erreur lors de la récupération des tickets :', error);
+        telegramBot.sendMessage(chatId, 'Une erreur est survenue lors de la récupération des tickets. Veuillez réessayer.');
+      }
     }
     
   } catch (error) {
