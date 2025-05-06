@@ -568,6 +568,21 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         session.step = 'paid';
         paymentSessions.set(userId, session);
         console.log('Paiement confirmé avec le statut:', paymentStatus.status);
+        console.log('DEBUG: Session actuelle après confirmation du paiement:', JSON.stringify(session, null, 2));
+        console.log('DEBUG: Quantité de tickets détectée:', session.quantity, typeof session.quantity);
+        
+        // S'assurer que session.quantity est un nombre et qu'il est au moins 1
+        if (session.quantity === undefined || session.quantity === null || isNaN(Number(session.quantity))) {
+          console.log('DEBUG: Quantité non définie ou invalide dans la session. Réglage sur 1.');
+          session.quantity = 1;
+        } else {
+          // Convertir explicitement en nombre pour éviter les problèmes de type
+          session.quantity = Number(session.quantity);
+          console.log('DEBUG: Quantité convertie en nombre:', session.quantity);
+        }
+        
+        // Mettre à jour la session
+        paymentSessions.set(userId, session);
         
         // Récupérer l'événement avec les données actuelles
         const event = db.prepare('SELECT * FROM events WHERE id = ?').get(session.event.id);
@@ -751,6 +766,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           console.log(`[Bot] ID de groupe généré pour la réservation : ${groupId}`);
           
           // Générer les tickets supplémentaires directement dans la table reservations
+          console.log('DEBUG: Vérification quantité pour tickets supplémentaires:', session.quantity, typeof session.quantity);
           if (session.quantity > 1) {
             console.log(`[Bot] Génération de ${session.quantity - 1} tickets supplémentaires`);
             
@@ -794,7 +810,57 @@ telegramBot.on('callback_query', async (callbackQuery) => {
               }
             }
           } else {
-            console.log('[Bot] Aucun ticket supplémentaire à générer (quantité = 1)');
+            console.log('[Bot] Aucun ticket supplémentaire à générer (quantité =', session.quantity, typeof session.quantity, ')');
+            // Forcer la génération de tickets supplémentaires si la quantité est dans la session
+            try {
+              // Convertir explicitement en nombre et vérifier s'il est supérieur à 1
+              const numQuantity = Number(session.quantity);
+              if (!isNaN(numQuantity) && numQuantity > 1) {
+                console.log(`[Bot] FORÇAGE de la génération de ${numQuantity - 1} tickets supplémentaires`);
+                
+                // Générer les tickets supplémentaires dans la même table que le ticket principal
+                for (let i = 1; i < numQuantity; i++) {
+                  try {
+                    // Générer un nouveau code QR unique pour chaque ticket supplémentaire
+                    const additionalQRCode = chapchapPay.generateQRCode();
+                    console.log(`[Bot] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
+                    
+                    // Préparer la requête SQL en fonction des colonnes disponibles
+                    let sql = `
+                      INSERT INTO reservations 
+                      (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, date
+                    `;
+                    
+                    // Ajouter les colonnes optionnelles si elles existent
+                    sql += `, parent_reference, ticket_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+                    
+                    // Insérer chaque ticket supplémentaire comme une entrée complète dans la table reservations
+                    const insertAdditionalResult = db.prepare(sql).run(
+                      fullName,
+                      username,
+                      session.event.id,
+                      session.event.name,
+                      session.category.name,
+                      1, // Quantité toujours 1 car c'est un ticket individuel
+                      session.category.price,
+                      session.category.price, // Prix total = prix unitaire pour un seul ticket
+                      'telegram',
+                      `${reference}-${i+1}`, // ID formaté unique pour ce ticket
+                      additionalQRCode, // QR code unique à 7 chiffres pour ce ticket
+                      currentDate,
+                      reference, // Référence au ticket principal
+                      i+1 // Numéro de ticket dans le groupe
+                    );
+                    
+                    console.log(`[Bot] Ticket supplémentaire FORCÉ #${i+1} inséré avec succès. ID: ${insertAdditionalResult.lastInsertRowid}`);
+                  } catch (additionalTicketError) {
+                    console.error(`[Bot] Erreur lors de l'insertion du ticket supplémentaire FORCÉ #${i+1}:`, additionalTicketError);
+                  }
+                }
+              }
+            } catch (forceError) {
+              console.error('[Bot] Erreur lors du forçage de la génération de tickets supplémentaires:', forceError);
+            }
           }
           
           // Générer et envoyer le ticket principal

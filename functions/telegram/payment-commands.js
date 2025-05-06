@@ -374,6 +374,20 @@ async function handleCheckPayment(ctx) {
         console.error('Erreur lors de la mise à jour des places disponibles:', updateError);
       }
       
+      // Débogage - afficher la session complète
+      console.log('DEBUG: Session avant traitement:', JSON.stringify(session, null, 2));
+      console.log('DEBUG: Quantité telle qu\'elle apparaît dans la session:', session.quantity, typeof session.quantity);
+      
+      // S'assurer que session.quantity est un nombre et qu'il est au moins 1
+      if (session.quantity === undefined || session.quantity === null || isNaN(Number(session.quantity))) {
+        console.log('DEBUG: Quantité non définie ou invalide dans la session. Réglage sur 1.');
+        session.quantity = 1;
+      } else {
+        // Convertir explicitement en nombre pour éviter les problèmes de type
+        session.quantity = Number(session.quantity);
+        console.log('DEBUG: Quantité convertie en nombre:', session.quantity);
+      }
+      
       // Vérifier et ajouter les colonnes nécessaires à la table reservations si elles n'existent pas
       try {
         // Vérifier si les colonnes parent_reference et ticket_number existent
