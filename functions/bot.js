@@ -768,6 +768,10 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           
           // Seuls les paiements validés génèrent des tickets
           if (paymentStatus.status === 'success' || paymentStatus.status === 'completed') {
+            // Définir la date actuelle pour tous les tickets
+            const currentDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+            console.log(`[Bot] Date de génération des tickets: ${currentDate}`);
+            
             // Générer tous les tickets individuellement avec un QR code unique
             const generatedTickets = [];
             
