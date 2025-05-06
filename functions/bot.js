@@ -20,31 +20,39 @@ const paymentSessions = new Map();
 // Commande /start - Message de bienvenue
 telegramBot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '🎟️ Acheter des tickets', callback_data: 'start_purchase' }],
+      [{ text: '📋 Mes tickets', callback_data: 'my_tickets' }],
+      [{ text: '❓ Aide', callback_data: 'help' }]
+    ]
+  };
   telegramBot.sendMessage(chatId, `Bienvenue ${msg.from.first_name} sur le service d'achat de tickets !
-  
-Utilisez les commandes suivantes :
-- /acheter - Acheter des tickets pour un événement
-- /mestickets - Voir vos tickets achetés
-- /aide - Obtenir de l'aide`);
+
+Choisissez une option ci-dessous:`, { reply_markup: keyboard });
 });
 
 // Commande /aide - Affiche l'aide
 telegramBot.onText(/\/aide/, (msg) => {
   const chatId = msg.chat.id;
-  telegramBot.sendMessage(chatId, `Voici la liste des commandes disponibles :
-
-- /acheter - Démarrer le processus d'achat de tickets
-- /mestickets - Afficher les tickets que vous avez achetés
-- /aide - Afficher ce message d'aide
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '🎟️ Acheter des tickets', callback_data: 'start_purchase' }],
+      [{ text: '📋 Mes tickets', callback_data: 'my_tickets' }],
+      [{ text: '🏠 Retour au menu', callback_data: 'main_menu' }]
+    ]
+  };
+  telegramBot.sendMessage(chatId, `Voici comment utiliser le service d'achat de tickets :
 
 Pour acheter un ticket :
-1. Utilisez la commande /acheter
-2. Sélectionnez un événement
-3. Choisissez une catégorie de ticket
-4. Sélectionnez la quantité
-5. Procédez au paiement via ChapChap Pay
-6. Vérifiez le statut du paiement
-7. Recevez vos tickets !`);
+1. Sélectionnez un événement
+2. Choisissez une catégorie de ticket
+3. Sélectionnez la quantité
+4. Procédez au paiement via ChapChap Pay
+5. Vérifiez le statut du paiement
+6. Recevez vos tickets !
+
+Choisissez une option ci-dessous:`, { reply_markup: keyboard });
 });
 
 // Commande /acheter - Démarre le processus d'achat de tickets
@@ -454,31 +462,29 @@ telegramBot.on('callback_query', async (callbackQuery) => {
         if (eventInfo && typeof eventInfo.available_seats === 'number' && eventInfo.available_seats < session.quantity) {
           return telegramBot.sendMessage(chatId, `Désolé, il ne reste que ${eventInfo.available_seats} place(s) disponible(s) pour cet événement.`);
         }
-      
+
         // Générer une référence unique pour ce paiement
         const reference = chapchapPay.generateTransactionId();
         session.reference = reference;
-        console.log('Référence générée:', reference);
-      
+
         // Générer le lien de paiement
         const paymentData = {
           amount: session.totalPrice,
           description: `Achat de ${session.quantity} ticket(s) pour ${session.event.name} - ${session.category.name}`,
-          reference: reference
+          reference
         };
-      
+
         console.log('Données de paiement prêtes:', JSON.stringify(paymentData));
         await telegramBot.sendMessage(chatId, 'Génération du lien de paiement en cours...');
-      
+
         console.log('Appel au service chapchapPay.generatePaymentLink...');
         const paymentResponse = await chapchapPay.generatePaymentLink(paymentData);
-        console.log('Réponse de ChapChap Pay:', JSON.stringify(paymentResponse));
-        
+
         // Stocker les informations de paiement dans la session
         session.paymentUrl = paymentResponse.payment_url;
         session.step = 'payment_pending';
         paymentSessions.set(userId, session);
-        
+
         // Envoyer le lien de paiement
         const keyboard = {
           inline_keyboard: [
@@ -496,7 +502,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             }]
           ]
         };
-        
+
         await telegramBot.sendMessage(
           chatId,
           `💸 Votre lien de paiement est prêt !\n\n` +
@@ -1006,6 +1012,119 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       paymentSessions.delete(userId);
       
       await telegramBot.sendMessage(chatId, 'Votre commande a été annulée. Vous pouvez démarrer un nouvel achat avec la commande /acheter');
+    }
+    
+    // Nouveaux boutons
+    else if (data === 'start_purchase') {
+      // Vérifier si l'utilisateur a déjà une session de paiement en cours
+      if (paymentSessions.has(userId)) {
+        return telegramBot.sendMessage(chatId, 'Vous avez déjà une session d\'achat en cours. Veuillez la terminer ou l\'annuler avant d\'en démarrer une nouvelle.');
+      }
+
+      // Récupérer les événements disponibles depuis la base de données
+      const Database = require('better-sqlite3');
+      const db = new Database(__dirname + '/data.sqlite');
+      
+      const events = db.prepare(`
+        SELECT * FROM events 
+        WHERE active = 1 
+        ORDER BY date
+      `).all();
+
+      if (!events || events.length === 0) {
+        return telegramBot.sendMessage(chatId, 'Aucun événement disponible pour le moment.');
+      }
+
+      // Créer les boutons pour les événements
+      const keyboard = {
+        inline_keyboard: []
+      };
+
+      events.forEach(event => {
+        keyboard.inline_keyboard.push([{
+          text: event.name,
+          callback_data: `select_event:${event.id}`
+        }]);
+      });
+
+      // Ajouter un bouton d'annulation
+      keyboard.inline_keyboard.push([{
+        text: 'Annuler',
+        callback_data: 'cancel_purchase'
+      }]);
+
+      await telegramBot.sendMessage(chatId, 'Veuillez sélectionner un événement :', {
+        reply_markup: keyboard
+      });
+
+      // Initialiser une session de paiement
+      paymentSessions.set(userId, { step: 'select_event' });
+    }
+    else if (data === 'my_tickets') {
+      const username = callbackQuery.from.username || '';
+      try {
+        const Database = require('better-sqlite3');
+        const db = new Database(__dirname + '/data.sqlite');
+        
+        // Récupérer les réservations de l'utilisateur (via l'ID Telegram ou le username)
+        const reservations = db.prepare(`
+          SELECT * FROM reservations 
+          WHERE (purchase_channel = 'telegram' AND phone = ?) 
+          ORDER BY created_at DESC
+        `).all(username);
+        
+        if (!reservations || reservations.length === 0) {
+          return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
+        }
+        
+        // Envoyer un message avec la liste des tickets
+        let message = 'Voici vos tickets achetés :\n\n';
+        
+        reservations.forEach((reservation, index) => {
+          message += `${index + 1}. ${reservation.event_name} - ${reservation.category_name}\n`;
+          message += `   Quantité: ${reservation.quantity}\n`;
+          message += `   Prix: ${reservation.total_price} GNF\n`;
+          message += `   Référence: ${reservation.formatted_id}\n\n`;
+        });
+        
+        message += 'Pour voir le détail d\'un ticket, utilisez /ticket suivi du numéro de la liste.';
+        
+        telegramBot.sendMessage(chatId, message);
+        
+      } catch (error) {
+        console.error('Erreur lors de la récupération des tickets :', error);
+        telegramBot.sendMessage(chatId, 'Une erreur est survenue. Veuillez réessayer plus tard.');
+      }
+    }
+    else if (data === 'help') {
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🎟️ Acheter des tickets', callback_data: 'start_purchase' }],
+          [{ text: '📋 Mes tickets', callback_data: 'my_tickets' }],
+          [{ text: '🏠 Retour au menu', callback_data: 'main_menu' }]
+        ]
+      };
+      telegramBot.sendMessage(chatId, `Voici comment utiliser le service d'achat de tickets :
+
+Pour acheter un ticket :
+1. Sélectionnez un événement
+2. Choisissez une catégorie de ticket
+3. Sélectionnez la quantité
+4. Procédez au paiement via ChapChap Pay
+5. Vérifiez le statut du paiement
+6. Recevez vos tickets !
+
+Choisissez une option ci-dessous:`, { reply_markup: keyboard });
+    }
+    else if (data === 'main_menu') {
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🎟️ Acheter des tickets', callback_data: 'start_purchase' }],
+          [{ text: '📋 Mes tickets', callback_data: 'my_tickets' }],
+          [{ text: '❓ Aide', callback_data: 'help' }]
+        ]
+      };
+      telegramBot.sendMessage(chatId, `Retour au menu principal. Choisissez une option ci-dessous:`, { reply_markup: keyboard });
     }
     
   } catch (error) {
