@@ -7,11 +7,79 @@ require('dotenv').config();
 // Importation du service ChapChap Pay
 const chapchapPay = require('./services/chapchap-pay');
 
-// polling: true => le bot écoute les messages entrants (mode développement ou prod unique)
-const telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true }); // polling activé pour recevoir les messages
+// polling:// Récupérer le token du bot depuis les variables d'environnement
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const telegramBot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
-// Stockage des sessions de paiement temporaires
+// Map pour stocker les sessions de paiement en cours (userId => sessionData)
 const paymentSessions = new Map();
+
+// Fonction pour gérer la vérification du paiement et l'envoi des tickets
+async function handlePaymentVerification(chatId, userId, reference) {
+  console.log(`[Bot] Vérification du paiement ${reference} pour l'utilisateur ${userId}`);
+  
+  // Vérifier si l'utilisateur a une session active
+  if (!paymentSessions.has(userId)) {
+    console.log(`[Bot] Pas de session trouvée pour l'utilisateur ${userId}`);
+    return telegramBot.sendMessage(chatId, 'Votre session a expiré. Veuillez recommencer l\'achat.');
+  }
+  
+  const session = paymentSessions.get(userId);
+  
+  // Vérifier que la référence correspond à celle de la session
+  if (session.reference !== reference) {
+    console.log(`[Bot] Référence de paiement invalide: ${session.reference} != ${reference}`);
+    return telegramBot.sendMessage(chatId, 'Référence de paiement invalide. Veuillez réessayer.');
+  }
+  
+  // Vérifier le statut du paiement
+  try {
+    const paymentStatus = await chapchapPay.checkPaymentStatus(reference);
+    console.log(`[Bot] Statut du paiement ${reference}: ${paymentStatus.status}`);
+    
+    // Initier la connexion à la base de données
+    const Database = require('better-sqlite3');
+    const db = new Database(__dirname + '/data.sqlite');
+    
+    // Si le paiement n'est pas validé, informer l'utilisateur
+    if (paymentStatus.status !== 'success' && paymentStatus.status !== 'completed' && paymentStatus.status !== 'paid') {
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🔄 Vérifier à nouveau', callback_data: `check_payment:${reference}` }],
+          [{ text: '❌ Annuler', callback_data: 'cancel_purchase' }]
+        ]
+      };
+      
+      await telegramBot.sendMessage(
+        chatId,
+        `Votre paiement n'a pas encore été confirmé.\n` +
+        `Statut : ${paymentStatus.status_description || paymentStatus.status}\n` +
+        `Veuillez réessayer dans quelques instants.`,
+        { reply_markup: keyboard }
+      );
+      return;
+    }
+    
+    // Si le paiement est validé mais que la session est déjà marquée comme payée, éviter le double envoi
+    if (session.step === 'paid') {
+      console.log(`[Bot] Session déjà marquée comme payée pour ${reference}`);
+      return telegramBot.sendMessage(chatId, 'Vos tickets ont déjà été générés et envoyés.');
+    }
+    
+    // Mettre à jour l'état de la session
+    session.step = 'paid';
+    paymentSessions.set(userId, session);
+    
+    // Le reste du code pour générer et envoyer les tickets sera exécuté dans la fonction de vérification de paiement existante
+    console.log(`[Bot] Paiement confirmé pour ${reference}, tickets prêts à être générés`);
+    
+    return true; // Indiquer que le paiement a été vérifié avec succès
+  } catch (error) {
+    console.error(`[Bot] Erreur lors de la vérification du paiement ${reference}:`, error);
+    telegramBot.sendMessage(chatId, 'Une erreur est survenue lors de la vérification du paiement. Veuillez réessayer plus tard.');
+    return false;
+  }
+}
 
 // =============================
 // COMMANDES DU BOT
@@ -371,16 +439,17 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       session.step = 'select_quantity';
       paymentSessions.set(userId, session);
       
-      // Créer les boutons pour les quantités
+      // Créer les boutons pour les quantités - version améliorée avec 5 boutons sur une même ligne
       const keyboard = {
         inline_keyboard: [
-          [{ text: '1', callback_data: 'select_quantity:1' }],
-          [{ text: '2', callback_data: 'select_quantity:2' }],
-          [{ text: '3', callback_data: 'select_quantity:3' }],
-          [{ text: '4', callback_data: 'select_quantity:4' }],
-          [{ text: '5', callback_data: 'select_quantity:5' }],
-          [{ text: '6', callback_data: 'select_quantity:6' }],
-          [{ text: 'Annuler', callback_data: 'cancel_purchase' }]
+          [
+            { text: '1🎟️', callback_data: 'select_quantity:1' },
+            { text: '2🎟️', callback_data: 'select_quantity:2' },
+            { text: '3🎟️', callback_data: 'select_quantity:3' },
+            { text: '4🎟️', callback_data: 'select_quantity:4' },
+            { text: '5🎟️', callback_data: 'select_quantity:5' }
+          ],
+          [{ text: '❌ Annuler', callback_data: 'cancel_purchase' }]
         ]
       };
       
@@ -410,15 +479,19 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       
       console.log(`[Bot] Quantité sélectionnée: ${session.quantity} (type: ${typeof session.quantity})`);
       
-      // Afficher le récapitulatif et demander confirmation avec un bouton "Oui, confirmer"
+      // Afficher le récapitulatif et demander confirmation avec des boutons plus explicites
       const confirmKeyboard = {
         inline_keyboard: [
           [{
-            text: 'Oui, confirmer',
+            text: '✅ Confirmer et payer',
             callback_data: 'confirm_purchase'
           }],
           [{
-            text: 'Annuler',
+            text: '🔙 Modifier la quantité',
+            callback_data: `select_category:${session.category.name}:${session.category.price}`
+          }],
+          [{
+            text: '❌ Annuler l\'achat',
             callback_data: 'cancel_purchase'
           }]
         ]
@@ -487,11 +560,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           inline_keyboard: [
             [{
               text: '💳 Payer maintenant',
-              url: paymentResponse.payment_url
-            }],
-            [{
-              text: '🔄 Vérifier le paiement',
-              callback_data: `check_payment:${reference}`
+              url: paymentResponse.redirect_url
             }],
             [{
               text: '❌ Annuler',
@@ -506,14 +575,74 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           `💰 Montant : ${paymentResponse.payment_amount_formatted}\n` +
           `🆔 Référence : ${reference}\n\n` +
           `⭐ Cliquez sur "Payer maintenant" pour procéder au paiement.\n` +
-          `❕ Après paiement, cliquez sur "Vérifier le paiement" pour générer vos tickets.`,
+          `✅ Vos tickets seront automatiquement générés une fois le paiement confirmé.`,
           { reply_markup: keyboard }
         );
+
+        // Configuration de la vérification automatique du paiement
+        console.log('[Bot] Configuration de la vérification automatique du paiement');
+
+        // Vérifier le statut du paiement toutes les 10 secondes pendant 5 minutes (30 tentatives)
+        let checkAttempts = 0;
+        const maxCheckAttempts = 30;
+
+        const paymentCheckInterval = setInterval(async () => {
+          checkAttempts++;
+          console.log(`[Bot] Vérification automatique du paiement ${reference} - tentative ${checkAttempts}/${maxCheckAttempts}`);
+
+          // Si l'utilisateur a annulé l'achat ou la session n'existe plus, arrêter les vérifications
+          if (!paymentSessions.has(userId) || paymentSessions.get(userId).step === 'paid') {
+            console.log(`[Bot] Arrêt des vérifications : l'utilisateur a annulé ou la session est terminée`);
+            clearInterval(paymentCheckInterval);
+            return;
+          }
+
+          try {
+            // Vérifier le statut du paiement
+            const paymentStatus = await chapchapPay.checkPaymentStatus(reference);
+            console.log(`[Bot] Statut du paiement ${reference} : ${paymentStatus.status}`);
+
+            // Si le paiement est validé, générer automatiquement les tickets
+            if (paymentStatus.status === 'success' || paymentStatus.status === 'completed' || paymentStatus.status === 'paid') {
+              console.log(`[Bot] Paiement ${reference} confirmé, génération automatique des tickets`);
+              clearInterval(paymentCheckInterval);
+
+              // Utiliser la fonction existante pour vérifier le paiement
+              await handlePaymentVerification(chatId, userId, reference);
+            }
+
+            // Arrêter les vérifications après le nombre maximum de tentatives
+            if (checkAttempts >= maxCheckAttempts) {
+              console.log(`[Bot] Nombre maximum de vérifications atteint pour le paiement ${reference}`);
+              clearInterval(paymentCheckInterval);
+
+              // Informer l'utilisateur
+              const manualCheckKeyboard = {
+                inline_keyboard: [[
+                  {
+                    text: '🔄 Vérifier mon paiement',
+                    callback_data: `check_payment:${reference}`
+                  }
+                ]]
+              };
+
+              await telegramBot.sendMessage(
+                chatId,
+                `⏰ La vérification automatique de votre paiement est terminée.\n\n` +
+                `Si vous avez déjà effectué le paiement mais n'avez pas reçu vos tickets, vous pouvez vérifier manuellement.`,
+                { reply_markup: manualCheckKeyboard }
+              );
+            }
+          } catch (error) {
+            console.error(`[Bot] Erreur lors de la vérification automatique du paiement ${reference} :`, error);
+          }
+        }, 10000); // Vérification toutes les 10 secondes
       } catch (error) {
         console.error('Erreur lors de la génération du lien de paiement:', error);
         telegramBot.sendMessage(chatId, 'Une erreur est survenue lors de la génération du lien de paiement. Veuillez réessayer plus tard.');
       }
     }
+
     
     // Vérification du paiement
     else if (data.startsWith('check_payment:')) {
@@ -521,56 +650,29 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       const reference = data.split(':')[1];
       console.log('Référence de paiement:', reference);
       
-      // Vérifier si l'utilisateur a une session active
-      if (!paymentSessions.has(userId)) {
-        console.log('ERREUR: Session non trouvée pour l\'utilisateur', userId);
-        return telegramBot.sendMessage(chatId, 'Votre session a expiré. Veuillez recommencer l\'achat.');
-      }
-      
-      const session = paymentSessions.get(userId);
-      console.log('Session active trouvée:', JSON.stringify(session));
-      
-      // Vérifier que la référence correspond à celle de la session
-      if (session.reference !== reference) {
-        console.log('ERREUR: Référence de paiement ne correspond pas:', session.reference, '!=', reference);
-        return telegramBot.sendMessage(chatId, 'Référence de paiement invalide. Veuillez réessayer.');
-      }
-
-      // Empêcher toute génération de ticket si la session n'est pas en attente de paiement
-      if (session.step !== 'payment_pending') {
-        console.log('Tentative de génération de ticket sans étape payment_pending. Session:', JSON.stringify(session));
-        return telegramBot.sendMessage(chatId, "Vous devez d'abord effectuer le paiement avant de recevoir vos tickets.");
-      }
-
+      // Message d'attente pendant la vérification
       await telegramBot.sendMessage(chatId, 'Vérification du statut de votre paiement...');
-
+      
+      // Utiliser la fonction de vérification du paiement
+      const paymentVerified = await handlePaymentVerification(chatId, userId, reference);
+      
+      // Si le paiement n'est pas vérifié avec succès, arrêter là
+      if (!paymentVerified) {
+        return;
+      }
+      
+      // Récupérer la session mise à jour
+      const session = paymentSessions.get(userId);
+      
+      // Initier la connexion à la base de données pour la génération de tickets
+      const Database = require('better-sqlite3');
+      const db = new Database(__dirname + '/data.sqlite');
+      console.log('Connexion à la base de données établie pour la génération de tickets');
+      
+      // Le statut de paiement est déjà vérifié dans handlePaymentVerification
+      // Suite du traitement pour générer les tickets
       try {
-        console.log('Appel au service chapchapPay.checkPaymentStatus avec référence:', reference);
-        // Vérifier le statut du paiement
-        const paymentStatus = await chapchapPay.checkPaymentStatus(reference);
-        console.log('Réponse du statut de paiement:', JSON.stringify(paymentStatus));
-        
-        // Initier la connexion à la base de données
-        const Database = require('better-sqlite3');
-        const db = new Database(__dirname + '/data.sqlite');
-        console.log('Connexion à la base de données établie');
-        
-        // Vérifier que le paiement est validé avant de générer les tickets
-        if (paymentStatus.status !== 'success' && paymentStatus.status !== 'completed' && paymentStatus.status !== 'paid') {
-          // Paiement non validé
-          await telegramBot.sendMessage(
-            chatId,
-            `Votre paiement est en cours de traitement.\n` +
-            `Statut actuel : ${paymentStatus.status_description || paymentStatus.status}\n` +
-            `Veuillez réessayer dans quelques instants.`
-          );
-          return;
-        }
-        
-        // Mettre à jour l'état de la session pour éviter tout double envoi
-        session.step = 'paid';
-        paymentSessions.set(userId, session);
-        console.log('Paiement confirmé avec le statut:', paymentStatus.status);
+        console.log('Paiement confirmé pour cette session');
         console.log('DEBUG: Session actuelle après confirmation du paiement:', JSON.stringify(session, null, 2));
         console.log('DEBUG: Quantité de tickets détectée:', session.quantity, typeof session.quantity);
         
@@ -943,8 +1045,8 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           );
         }
       } catch (error) {
-        console.error('Erreur lors de la vérification du paiement :', error);
-        telegramBot.sendMessage(chatId, 'Une erreur est survenue lors de la vérification du paiement. Veuillez réessayer plus tard.');
+        console.error('Erreur lors de la génération et envoi des tickets :', error);
+        telegramBot.sendMessage(chatId, 'Une erreur est survenue lors de la génération des tickets. Veuillez contacter le support.');
       }
     }
     
