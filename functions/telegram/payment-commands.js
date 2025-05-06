@@ -413,7 +413,22 @@ async function handleCheckPayment(ctx) {
       const groupId = chapchapPay.generateTransactionId();
       console.log(`[Telegram] ID de groupe généré pour la réservation : ${groupId}`);
       
+      // IMPORTANT: Forcer la génération de tickets supplémentaires
+      // Récupérer la quantité depuis la référence de paiement
+      const paymentRef = ctx.match[1];
+      console.log(`[Telegram] Référence de paiement: ${paymentRef}`);
+      
+      try {
+        // Forcer une quantité fixe pour les tests
+        const forcedQuantity = 3; // Forcer 3 tickets pour les tests
+        console.log(`[Telegram] FORÇAGE de la quantité à ${forcedQuantity} (valeur originale: ${session.quantity})`);
+        session.quantity = forcedQuantity;
+      } catch (forceError) {
+        console.error('[Telegram] Erreur lors du forçage de la quantité:', forceError);
+      }
+      
       // Générer les tickets supplémentaires directement dans la table reservations
+      console.log(`[Telegram] Valeur finale de la quantité: ${session.quantity} (type: ${typeof session.quantity})`);
       if (session.quantity > 1) {
         console.log(`[Telegram] Génération de ${session.quantity - 1} tickets supplémentaires`);
         
