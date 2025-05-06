@@ -374,40 +374,38 @@ async function handleCheckPayment(ctx) {
         console.error('Erreur lors de la mise à jour des places disponibles:', updateError);
       }
       
-      // Générer les tickets supplémentaires si nécessaire
+      // Ajouter un identifiant de groupe pour cette réservation (pour lier tous les tickets ensemble)
+      const groupId = chapchapPay.generateTransactionId();
+      console.log(`[Telegram] ID de groupe généré pour la réservation : ${groupId}`);
+      
+      // Générer les tickets supplémentaires directement dans la table reservations
       if (session.quantity > 1) {
-        // Vérifier si la table additional_tickets existe
-        const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='additional_tickets'").get();
-        
-        if (!tableExists) {
-          // Créer la table si elle n'existe pas
-          db.prepare(`
-            CREATE TABLE additional_tickets (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              reservation_id INTEGER,
-              formatted_id TEXT,
-              qr_code TEXT,
-              ticket_number INTEGER,
-              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              FOREIGN KEY (reservation_id) REFERENCES reservations(id)
-            )
-          `).run();
-        }
-        
-        // Générer les tickets supplémentaires
+        // Générer les tickets supplémentaires dans la même table que le ticket principal
         for (let i = 1; i < session.quantity; i++) {
           // Générer un nouveau code QR unique pour chaque ticket supplémentaire
           const additionalQRCode = chapchapPay.generateQRCode();
           console.log(`[Telegram] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
           
+          // Insérer chaque ticket supplémentaire comme une entrée complète dans la table reservations
           db.prepare(`
-            INSERT INTO additional_tickets (reservation_id, formatted_id, qr_code, ticket_number)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO reservations 
+            (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, parent_reference, ticket_number, date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
-            insertResult.lastInsertRowid,
-            `${reference}-${i+1}`,
-            additionalQRCode, // Code QR unique pour chaque ticket supplémentaire
-            i+1
+            reservationData.user,
+            reservationData.phone,
+            reservationData.event_id,
+            reservationData.event_name,
+            reservationData.category_name,
+            1, // Quantité toujours 1 car c'est un ticket individuel
+            reservationData.unit_price,
+            reservationData.unit_price, // Prix total = prix unitaire pour un seul ticket
+            reservationData.purchase_channel,
+            `${reference}-${i+1}`, // ID formaté unique pour ce ticket
+            additionalQRCode, // QR code unique à 7 chiffres pour ce ticket
+            reference, // Référence au ticket principal
+            i+1, // Numéro de ticket dans le groupe
+            currentDate
           );
         }
       }
