@@ -374,40 +374,76 @@ async function handleCheckPayment(ctx) {
         console.error('Erreur lors de la mise à jour des places disponibles:', updateError);
       }
       
+      // Vérifier et ajouter les colonnes nécessaires à la table reservations si elles n'existent pas
+      try {
+        // Vérifier si les colonnes parent_reference et ticket_number existent
+        const columns = db.prepare("PRAGMA table_info(reservations)").all();
+        const hasParentReference = columns.some(col => col.name === 'parent_reference');
+        const hasTicketNumber = columns.some(col => col.name === 'ticket_number');
+        
+        // Ajouter les colonnes manquantes si nécessaire
+        if (!hasParentReference) {
+          console.log('[Telegram] Ajout de la colonne parent_reference à la table reservations');
+          db.prepare("ALTER TABLE reservations ADD COLUMN parent_reference TEXT").run();
+        }
+        
+        if (!hasTicketNumber) {
+          console.log('[Telegram] Ajout de la colonne ticket_number INTEGER à la table reservations');
+          db.prepare("ALTER TABLE reservations ADD COLUMN ticket_number INTEGER").run();
+        }
+      } catch (schemaError) {
+        console.error('[Telegram] Erreur lors de la vérification/modification du schéma:', schemaError);
+      }
+      
       // Ajouter un identifiant de groupe pour cette réservation (pour lier tous les tickets ensemble)
       const groupId = chapchapPay.generateTransactionId();
       console.log(`[Telegram] ID de groupe généré pour la réservation : ${groupId}`);
       
       // Générer les tickets supplémentaires directement dans la table reservations
       if (session.quantity > 1) {
+        console.log(`[Telegram] Génération de ${session.quantity - 1} tickets supplémentaires`);
+        
         // Générer les tickets supplémentaires dans la même table que le ticket principal
         for (let i = 1; i < session.quantity; i++) {
-          // Générer un nouveau code QR unique pour chaque ticket supplémentaire
-          const additionalQRCode = chapchapPay.generateQRCode();
-          console.log(`[Telegram] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
-          
-          // Insérer chaque ticket supplémentaire comme une entrée complète dans la table reservations
-          db.prepare(`
-            INSERT INTO reservations 
-            (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, parent_reference, ticket_number, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(
-            reservationData.user,
-            reservationData.phone,
-            reservationData.event_id,
-            reservationData.event_name,
-            reservationData.category_name,
-            1, // Quantité toujours 1 car c'est un ticket individuel
-            reservationData.unit_price,
-            reservationData.unit_price, // Prix total = prix unitaire pour un seul ticket
-            reservationData.purchase_channel,
-            `${reference}-${i+1}`, // ID formaté unique pour ce ticket
-            additionalQRCode, // QR code unique à 7 chiffres pour ce ticket
-            reference, // Référence au ticket principal
-            i+1, // Numéro de ticket dans le groupe
-            currentDate
-          );
+          try {
+            // Générer un nouveau code QR unique pour chaque ticket supplémentaire
+            const additionalQRCode = chapchapPay.generateQRCode();
+            console.log(`[Telegram] Nouveau QR code généré pour le ticket supplémentaire #${i+1} : ${additionalQRCode}`);
+            
+            // Préparer la requête SQL en fonction des colonnes disponibles
+            let sql = `
+              INSERT INTO reservations 
+              (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, purchase_channel, formatted_id, qr_code, date
+            `;
+            
+            // Ajouter les colonnes optionnelles si elles existent
+            sql += `, parent_reference, ticket_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            
+            // Insérer chaque ticket supplémentaire comme une entrée complète dans la table reservations
+            const insertResult = db.prepare(sql).run(
+              reservationData.user,
+              reservationData.phone,
+              reservationData.event_id,
+              reservationData.event_name,
+              reservationData.category_name,
+              1, // Quantité toujours 1 car c'est un ticket individuel
+              reservationData.unit_price,
+              reservationData.unit_price, // Prix total = prix unitaire pour un seul ticket
+              reservationData.purchase_channel,
+              `${reference}-${i+1}`, // ID formaté unique pour ce ticket
+              additionalQRCode, // QR code unique à 7 chiffres pour ce ticket
+              currentDate,
+              reference, // Référence au ticket principal
+              i+1 // Numéro de ticket dans le groupe
+            );
+            
+            console.log(`[Telegram] Ticket supplémentaire #${i+1} inséré avec succès. ID: ${insertResult.lastInsertRowid}`);
+          } catch (ticketError) {
+            console.error(`[Telegram] Erreur lors de l'insertion du ticket supplémentaire #${i+1}:`, ticketError);
+          }
         }
+      } else {
+        console.log('[Telegram] Aucun ticket supplémentaire à générer (quantité = 1)');
       }
       
       // Envoyer les tickets à l'utilisateur
