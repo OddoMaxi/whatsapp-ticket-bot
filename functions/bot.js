@@ -905,12 +905,12 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             console.log(`[Bot] Vérification d'envoi de tickets supplémentaires avec quantité: ${ticketQuantity}`);
             if (ticketQuantity > 1) {
               try {
-                // Récupérer les tickets supplémentaires de la base de données
+                // Récupérer les tickets supplémentaires de la base de données (dans la table reservations)
                 const additionalTickets = db.prepare(`
-                  SELECT * FROM additional_tickets WHERE reservation_id = ? ORDER BY ticket_number
-                `).all(insertResult.lastInsertRowid);
+                  SELECT * FROM reservations WHERE parent_reference = ? ORDER BY ticket_number
+                `).all(reference);
                 
-                console.log(`DEBUG: Génération de ${additionalTickets.length} tickets supplémentaires`);
+                console.log(`DEBUG: Génération de ${additionalTickets.length} tickets supplémentaires (récupérés depuis la table reservations)`);
                 
                 // Générer et envoyer chaque ticket supplémentaire
                 for (const ticket of additionalTickets) {
@@ -919,12 +919,12 @@ telegramBot.on('callback_query', async (callbackQuery) => {
                   generateAndSendTicket({
                     to: chatId,
                     channel: 'telegram',
-                    eventName: session.event.name,
-                    category: session.category.name,
-                    reservationId: insertResult.lastInsertRowid,
-                    price: session.category.price,
-                    formattedId: ticket.formatted_id,
-                    qrCode: ticket.qr_code
+                    eventName: ticket.event_name, // Utiliser les données du ticket
+                    category: ticket.category_name, // Utiliser les données du ticket
+                    reservationId: ticket.id, // ID du ticket supplémentaire
+                    price: ticket.unit_price, // Prix unitaire du ticket
+                    formattedId: ticket.formatted_id, // ID formaté du ticket supplémentaire
+                    qrCode: ticket.qr_code // QR code du ticket supplémentaire
                   });
                   
                   // Petite pause entre chaque envoi pour éviter les limitations API
