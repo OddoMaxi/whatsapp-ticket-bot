@@ -374,18 +374,13 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       // Créer les boutons pour les quantités
       const keyboard = {
         inline_keyboard: [
-          [1, 2, 3].map(qty => ({
-            text: `${qty}`,
-            callback_data: `select_quantity:${qty}`
-          })),
-          [4, 5, 6].map(qty => ({
-            text: `${qty}`,
-            callback_data: `select_quantity:${qty}`
-          })),
-          [{
-            text: 'Annuler',
-            callback_data: 'cancel_purchase'
-          }]
+          [{ text: '1', callback_data: 'select_quantity:1' }],
+          [{ text: '2', callback_data: 'select_quantity:2' }],
+          [{ text: '3', callback_data: 'select_quantity:3' }],
+          [{ text: '4', callback_data: 'select_quantity:4' }],
+          [{ text: '5', callback_data: 'select_quantity:5' }],
+          [{ text: '6', callback_data: 'select_quantity:6' }],
+          [{ text: 'Annuler', callback_data: 'cancel_purchase' }]
         ]
       };
       
