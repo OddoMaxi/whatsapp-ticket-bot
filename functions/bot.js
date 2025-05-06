@@ -403,10 +403,12 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       
       // Mettre à jour la session avec la quantité sélectionnée
       const session = paymentSessions.get(userId);
-      session.quantity = quantity;
+      session.quantity = parseInt(quantity, 10); // S'assurer que la quantité est un nombre entier
       session.step = 'payment_creation';
-      session.totalPrice = session.category.price * quantity;
+      session.totalPrice = session.category.price * session.quantity;
       paymentSessions.set(userId, session);
+      
+      console.log(`[Bot] Quantité sélectionnée: ${session.quantity} (type: ${typeof session.quantity})`);
       
       // Afficher le récapitulatif et demander confirmation avec un bouton "Oui, confirmer"
       const confirmKeyboard = {
@@ -768,11 +770,13 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           
           // Générer les tickets supplémentaires directement dans la table reservations
           console.log('DEBUG: Vérification quantité pour tickets supplémentaires:', session.quantity, typeof session.quantity);
-          if (session.quantity > 1) {
-            console.log(`[Bot] Génération de ${session.quantity - 1} tickets supplémentaires`);
+          // Convertir explicitement en nombre entier pour s'assurer que la comparaison fonctionne
+          const ticketQuantity = parseInt(session.quantity, 10);
+          if (ticketQuantity > 1) {
+            console.log(`[Bot] Génération de ${ticketQuantity - 1} tickets supplémentaires`);
             
             // Générer les tickets supplémentaires dans la même table que le ticket principal
-            for (let i = 1; i < session.quantity; i++) {
+            for (let i = 1; i < ticketQuantity; i++) {
               try {
                 // Générer un nouveau code QR unique pour chaque ticket supplémentaire
                 const additionalQRCode = chapchapPay.generateQRCode();
@@ -814,8 +818,9 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             console.log('[Bot] Aucun ticket supplémentaire à générer (quantité =', session.quantity, typeof session.quantity, ')');
             // Forcer la génération de tickets supplémentaires si la quantité est dans la session
             try {
-              // Convertir explicitement en nombre et vérifier s'il est supérieur à 1
-              const numQuantity = Number(session.quantity);
+              // Convertir explicitement en nombre entier et vérifier s'il est supérieur à 1
+              const numQuantity = parseInt(session.quantity, 10);
+              console.log(`[Bot] Forçage vérification de la quantité: ${numQuantity} (${typeof numQuantity})`);
               if (!isNaN(numQuantity) && numQuantity > 1) {
                 console.log(`[Bot] FORÇAGE de la génération de ${numQuantity - 1} tickets supplémentaires`);
                 
@@ -896,7 +901,9 @@ telegramBot.on('callback_query', async (callbackQuery) => {
             });
             
             // Générer et envoyer les tickets supplémentaires, si applicable
-            if (session.quantity > 1) {
+            const ticketQuantity = parseInt(session.quantity, 10);
+            console.log(`[Bot] Vérification d'envoi de tickets supplémentaires avec quantité: ${ticketQuantity}`);
+            if (ticketQuantity > 1) {
               try {
                 // Récupérer les tickets supplémentaires de la base de données
                 const additionalTickets = db.prepare(`
