@@ -560,7 +560,7 @@ telegramBot.on('callback_query', async (callbackQuery) => {
           inline_keyboard: [
             [{
               text: '💳 Payer maintenant',
-              url: paymentResponse.redirect_url
+              url: paymentResponse.payment_url
             }],
             [{
               text: '❌ Annuler',
