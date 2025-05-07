@@ -1073,9 +1073,11 @@ telegramBot.on('callback_query', async (callbackQuery) => {
       
       const events = db.prepare(`
         SELECT * FROM events 
-        WHERE active = 1 
         ORDER BY date
       `).all();
+      
+      // Note: Si vous souhaitez filtrer les événements actifs à l'avenir,
+      // ajoutez une colonne 'active' à la table events avec ALTER TABLE
 
       if (!events || events.length === 0) {
         return telegramBot.sendMessage(chatId, 'Aucun événement disponible pour le moment.');
