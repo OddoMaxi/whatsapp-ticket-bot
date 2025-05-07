@@ -194,7 +194,7 @@ telegramBot.onText(/\/mestickets/, async (msg) => {
       SELECT * FROM reservations 
       WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
       ORDER BY date DESC
-    `).all(username, userId.toString());
+    `).all(username, userId.toString()); // OK, déjà corrigé ici
     
     if (!reservations || reservations.length === 0) {
       return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
@@ -234,9 +234,9 @@ telegramBot.onText(/\/ticket ([0-9]+)/, async (msg, match) => {
     // Récupérer les réservations de l'utilisateur
     const reservations = db.prepare(`
       SELECT * FROM reservations 
-      WHERE (purchase_channel = 'telegram' AND phone = ?) 
+      WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
       ORDER BY date DESC
-    `).all(username);
+    `).all(username, userId.toString());
     
     if (!reservations || reservations.length === 0 || ticketIndex < 0 || ticketIndex >= reservations.length) {
       return telegramBot.sendMessage(chatId, 'Ticket non trouvé. Veuillez vérifier le numéro du ticket.');
@@ -945,13 +945,14 @@ await generateAndSendTicket({
         }
         
         // Mise à jour du nombre total de places disponibles
-        if (typeof event.available_seats === 'number') {
+        // (À NE FAIRE QU'APRÈS VALIDATION DU PAIEMENT)
+        if (typeof event.available_seats === 'number' && session.step === 'paid') {
           const newAvailableSeats = Math.max(0, event.available_seats - session.quantity);
           db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
           console.log(`[Bot] Nombre total de places mis à jour pour l'événement #${session.event.id}: ${event.available_seats} -> ${newAvailableSeats}`);
         }
         
-        // Mise à jour de la quantité spécifique à la catégorie
+        // Mise à jour de la quantité spécifique à la catégorie (après paiement)
         const categoriesStr = event.categories;
         if (categoriesStr) {
           // Paiement réussi, procéder à la création des tickets
@@ -1070,17 +1071,19 @@ await generateAndSendTicket({
                   const qtyBefore = cat.quantite !== undefined ? cat.quantite : (cat.quantity !== undefined ? cat.quantity : 0);
                   
                   // Mise à jour de la quantité (gestion des deux noms de propriété possibles: quantite ou quantity)
-                  if (cat.quantite !== undefined) {
-                    cat.quantite = Math.max(0, cat.quantite - session.quantity);
-                    console.log(`[Bot] Quantité ('quantite') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantite}`);
-                  } else if (cat.quantity !== undefined) {
-                    cat.quantity = Math.max(0, cat.quantity - session.quantity);
-                    console.log(`[Bot] Quantité ('quantity') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantity}`);
+                  if (session.step === 'paid') {
+                    if (cat.quantite !== undefined) {
+                      cat.quantite = Math.max(0, cat.quantite - session.quantity);
+                      console.log(`[Bot] Quantité ('quantite') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantite}`);
+                    }
+                    if (cat.quantity !== undefined) {
+                      cat.quantity = Math.max(0, cat.quantity - session.quantity);
+                      console.log(`[Bot] Quantité ('quantity') mise à jour pour ${cat.name}: ${qtyBefore} -> ${cat.quantity}`);
+                    }
+                    // Sauvegarder les catégories mises à jour
+                    const updateResult = db.prepare('UPDATE events SET categories = ? WHERE id = ?').run(JSON.stringify(categories), session.event.id);
+                    console.log(`[Bot] Catégorie mise à jour pour l'événement #${session.event.id}:`, { updateResult });
                   }
-                  
-                  // Sauvegarder les catégories mises à jour
-                  const updateResult = db.prepare('UPDATE events SET categories = ? WHERE id = ?').run(JSON.stringify(categories), session.event.id);
-                  console.log(`[Bot] Catégorie mise à jour pour l'événement #${session.event.id}:`, { updateResult });
                 } else {
                   console.error(`[Bot] Catégorie ${session.category.name} introuvable dans l'événement #${session.event.id}`);
                 }
@@ -1368,10 +1371,10 @@ await generateAndSendTicket({
         const orders = db.prepare(`
           SELECT order_reference, event_name, category_name, unit_price, date, COUNT(*) as ticket_count
           FROM reservations 
-          WHERE purchase_channel = 'telegram' AND phone = ? 
+          WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
           GROUP BY order_reference
           ORDER BY date DESC
-        `).all(username);
+        `).all(username, userId.toString());
         
         if (!orders || orders.length === 0) {
           return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
@@ -1465,10 +1468,10 @@ Choisissez une option ci-dessous:`, { reply_markup: keyboard });
         const orders = db.prepare(`
           SELECT order_reference, event_name, category_name, date
           FROM reservations 
-          WHERE purchase_channel = 'telegram' AND phone = ? 
+          WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
           GROUP BY order_reference
           ORDER BY date DESC
-        `).all(username);
+        `).all(username, callbackQuery.from.id.toString());
         
         if (!orders || orderIndex >= orders.length) {
           return telegramBot.sendMessage(chatId, 'Commande introuvable.');
