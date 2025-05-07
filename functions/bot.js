@@ -642,6 +642,62 @@ telegramBot.on('callback_query', async (callbackQuery) => {
                     throw new Error(`Événement avec l'ID ${session.event.id} introuvable`);
                   }
                   
+                  // Vérifier et ajouter les colonnes nécessaires à la table reservations si elles n'existent pas
+                  try {
+                    console.log('[Bot] Vérification des colonnes de la table reservations...');
+                    
+                    // Vérifier quelles colonnes existent dans la table reservations
+                    const columns = db.prepare("PRAGMA table_info(reservations)").all();
+                    console.log('[Bot] Colonnes existantes:', columns.map(col => col.name).join(', '));
+                    
+                    // Vérifier si toutes les colonnes nécessaires existent
+                    const hasOrderReference = columns.some(col => col.name === 'order_reference');
+                    const hasTicketNumber = columns.some(col => col.name === 'ticket_number');
+                    const hasPaymentReference = columns.some(col => col.name === 'payment_reference');
+                    const hasPaymentStatus = columns.some(col => col.name === 'payment_status');
+                    const hasQrCode = columns.some(col => col.name === 'qr_code');
+                    const hasPurchaseChannel = columns.some(col => col.name === 'purchase_channel');
+                    const hasFormattedId = columns.some(col => col.name === 'formatted_id');
+                    
+                    // Ajouter les colonnes manquantes si nécessaire
+                    if (!hasOrderReference) {
+                      console.log('[Bot] Ajout de la colonne order_reference à la table reservations');
+                      db.prepare("ALTER TABLE reservations ADD COLUMN order_reference TEXT").run();
+                    }
+                    
+                    if (!hasTicketNumber) {
+                      console.log('[Bot] Ajout de la colonne ticket_number à la table reservations');
+                      db.prepare("ALTER TABLE reservations ADD COLUMN ticket_number INTEGER").run();
+                    }
+                    
+                    if (!hasPaymentReference) {
+                      console.log('[Bot] Ajout de la colonne payment_reference à la table reservations');
+                      db.prepare("ALTER TABLE reservations ADD COLUMN payment_reference TEXT").run();
+                    }
+                    
+                    if (!hasPaymentStatus) {
+                      console.log('[Bot] Ajout de la colonne payment_status à la table reservations');
+                      db.prepare("ALTER TABLE reservations ADD COLUMN payment_status TEXT").run();
+                    }
+                    
+                    if (!hasQrCode) {
+                      console.log('[Bot] Ajout de la colonne qr_code à la table reservations');
+                      db.prepare("ALTER TABLE reservations ADD COLUMN qr_code TEXT").run();
+                    }
+                    
+                    if (!hasPurchaseChannel) {
+                      console.log('[Bot] Ajout de la colonne purchase_channel à la table reservations');
+                      db.prepare("ALTER TABLE reservations ADD COLUMN purchase_channel TEXT").run();
+                    }
+                    
+                    if (!hasFormattedId) {
+                      console.log('[Bot] Ajout de la colonne formatted_id à la table reservations');
+                      db.prepare("ALTER TABLE reservations ADD COLUMN formatted_id TEXT").run();
+                    }
+                  } catch (schemaError) {
+                    console.error('[Bot] Erreur lors de la modification du schéma:', schemaError);
+                  }
+                  
                   // Mise à jour du nombre total de places disponibles
                   if (typeof event.available_seats === 'number') {
                     const newAvailableSeats = Math.max(0, event.available_seats - session.quantity);
