@@ -95,9 +95,7 @@ telegramBot.onText(/\/start/, (msg) => {
       [{ text: '❓ Aide', callback_data: 'help' }]
     ]
   };
-  telegramBot.sendMessage(chatId, `Bienvenue ${msg.from.first_name} sur le service d'achat de tickets !
-
-Choisissez une option ci-dessous:`, { reply_markup: keyboard });
+  telegramBot.sendMessage(chatId, 'Bienvenue sur le service d\'achat de tickets !\n\nUtilisez les boutons ci-dessous pour naviguer dans le menu.', { reply_markup: keyboard });
 });
 
 // Commande /aide - Affiche l'aide
@@ -197,22 +195,24 @@ telegramBot.onText(/\/mestickets/, async (msg) => {
     `).all(username, userId.toString()); // OK, déjà corrigé ici
     
     if (!reservations || reservations.length === 0) {
+      // Nettoyer la session de paiement si elle existe (évite les blocages)
+      if (paymentSessions.has(userId)) paymentSessions.delete(userId);
       return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
     }
     
     // Envoyer un message avec la liste des tickets
-    let message = 'Voici vos tickets achetés :\n\n';
+    let message = '🎟️ *Vos tickets achetés* :\n\n';
     
     reservations.forEach((reservation, index) => {
-      message += `${index + 1}. ${reservation.event_name} - ${reservation.category_name}\n`;
+      message += `*${index + 1}.* ${reservation.event_name} - ${reservation.category_name}\n`;
       message += `   Quantité: ${reservation.quantity}\n`;
       message += `   Prix: ${reservation.total_price} GNF\n`;
       message += `   Référence: ${reservation.formatted_id}\n\n`;
     });
     
-    message += 'Pour voir le détail d\'un ticket, utilisez /ticket suivi du numéro de la liste.';
+    message += 'Pour voir le détail d\'un ticket, utilisez le bouton "Mes tickets" du menu.';
     
-    telegramBot.sendMessage(chatId, message);
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
     
   } catch (error) {
     console.error('Erreur lors de la récupération des tickets :', error);
@@ -263,6 +263,22 @@ telegramBot.onText(/\/ticket ([0-9]+)/, async (msg, match) => {
     console.error('Erreur lors de l\'affichage du ticket :', error);
     telegramBot.sendMessage(chatId, 'Une erreur est survenue. Veuillez réessayer plus tard.');
   }
+});
+
+// =============================
+// HANDLER TEXTE "menu" : affiche le menu moderne avec boutons
+// =============================
+
+telegramBot.onText(/menu/i, (msg) => {
+  const chatId = msg.chat.id;
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '🎟️ Acheter des tickets', callback_data: 'start_purchase' }],
+      [{ text: '📋 Mes tickets', callback_data: 'my_tickets' }],
+      [{ text: '❓ Aide', callback_data: 'help' }]
+    ]
+  };
+  telegramBot.sendMessage(chatId, 'Bienvenue dans le menu principal ! Choisissez une option ci-dessous :', { reply_markup: keyboard });
 });
 
 // =============================
@@ -1240,12 +1256,14 @@ await generateAndSendTicket({
               { reply_markup: keyboard }
             );
 
-            // Nettoyer la session
+            // Nettoyer la session après génération des tickets
             paymentSessions.delete(userId);
           } else {
             // Si on arrive ici, on n'a pas généré de tickets car le paiement n'est pas validé
             console.log('DEBUG: Pas de génération de tickets - paiement non validé', { session });
             await telegramBot.sendMessage(chatId, 'Les tickets seront générés une fois le paiement validé.');
+            // Nettoyer la session pour éviter le blocage
+            if (paymentSessions.has(userId)) paymentSessions.delete(userId);
           }
           
         } else if (paymentStatus.status === 'pending') {
