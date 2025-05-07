@@ -608,7 +608,190 @@ telegramBot.on('callback_query', async (callbackQuery) => {
               clearInterval(paymentCheckInterval);
 
               // Utiliser la fonction existante pour vérifier le paiement
-              await handlePaymentVerification(chatId, userId, reference);
+              const paymentVerified = await handlePaymentVerification(chatId, userId, reference);
+              
+              // Si le paiement est vérifié avec succès, générer et envoyer les tickets
+              if (paymentVerified) {
+                // Récupérer la session mise à jour
+                const session = paymentSessions.get(userId);
+                
+                // Initier la connexion à la base de données pour la génération de tickets
+                const Database = require('better-sqlite3');
+                const db = new Database(__dirname + '/data.sqlite');
+                console.log('[Bot] Connexion à la base de données établie pour la génération automatique de tickets');
+                
+                try {
+                  console.log('[Bot] Génération automatique des tickets en cours...');
+                  
+                  // S'assurer que session.quantity est un nombre et qu'il est au moins 1
+                  if (session.quantity === undefined || session.quantity === null || isNaN(Number(session.quantity))) {
+                    console.log('[Bot] Quantité non définie ou invalide dans la session. Réglage sur 1.');
+                    session.quantity = 1;
+                  } else {
+                    // Convertir explicitement en nombre pour éviter les problèmes de type
+                    session.quantity = Number(session.quantity);
+                    console.log('[Bot] Quantité convertie en nombre:', session.quantity);
+                  }
+                  
+                  // Mettre à jour la session
+                  paymentSessions.set(userId, session);
+                  
+                  // Récupérer l'événement avec les données actuelles
+                  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(session.event.id);
+                  if (!event) {
+                    throw new Error(`Événement avec l'ID ${session.event.id} introuvable`);
+                  }
+                  
+                  // Mise à jour du nombre total de places disponibles
+                  if (typeof event.available_seats === 'number') {
+                    const newAvailableSeats = Math.max(0, event.available_seats - session.quantity);
+                    db.prepare('UPDATE events SET available_seats = ? WHERE id = ?').run(newAvailableSeats, session.event.id);
+                    console.log(`[Bot] Nombre total de places mis à jour pour l'événement #${session.event.id}: ${event.available_seats} -> ${newAvailableSeats}`);
+                  }
+                  
+                  // Créer une référence de commande unique pour relier tous les tickets
+                  const orderReference = chapchapPay.generateTransactionId();
+                  console.log(`[Bot] Référence de commande générée : ${orderReference}`);
+                  
+                  // On convertit explicitement la quantité en nombre entier
+                  const ticketQuantity = parseInt(session.quantity, 10);
+                  console.log(`[Bot] Génération de ${ticketQuantity} tickets pour la commande ${orderReference}`);
+                  
+                  // Génération des tickets (on assume que le paiement est validé puisqu'on est dans cette partie du code)
+                  const paymentStatusIsValid = true;
+                  if (paymentStatusIsValid) {
+                    // Définir la date actuelle pour tous les tickets
+                    const currentDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+                    console.log(`[Bot] Date de génération des tickets: ${currentDate}`);
+                    
+                    // Générer tous les tickets individuellement avec un QR code unique
+                    const generatedTickets = [];
+                    
+                    for (let i = 0; i < ticketQuantity; i++) {
+                      try {
+                        // Générer un QR code unique pour chaque ticket
+                        const uniqueQRCode = chapchapPay.generateQRCode();
+                        const ticketNumber = i + 1;
+                        const formattedTicketId = `${orderReference}-${ticketNumber}`;
+                        
+                        console.log(`[Bot] Génération du ticket #${ticketNumber} avec QR code: ${uniqueQRCode}`);
+                        
+                        // Préparer la requête SQL avec la colonne order_reference
+                        const username = userId;
+                        const fullName = 'Acheteur Telegram';
+                        const sql = `
+                          INSERT INTO reservations 
+                          (user, phone, event_id, event_name, category_name, quantity, unit_price, total_price, 
+                           purchase_channel, formatted_id, qr_code, payment_reference, payment_status, 
+                           date, order_reference, ticket_number)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `;
+                        
+                        const insertResult = db.prepare(sql).run(
+                          fullName,
+                          username,
+                          session.event.id,
+                          session.event.name,
+                          session.category.name,
+                          1,  // Chaque ticket est unique (quantité = 1)
+                          session.category.price,
+                          session.category.price,
+                          'telegram',
+                          formattedTicketId,
+                          uniqueQRCode,
+                          reference,
+                          'paid',
+                          currentDate,
+                          orderReference,
+                          ticketNumber
+                        );
+                        
+                        console.log(`[Bot] Ticket #${ticketNumber} inséré dans la base de données:`, insertResult);
+                        
+                        // Ajouter le ticket généré à la liste pour l'envoi
+                        generatedTickets.push({
+                          qrCode: uniqueQRCode,
+                          formattedId: formattedTicketId,
+                          eventName: session.event.name,
+                          category: session.category.name,
+                          price: session.category.price,
+                          ticketNumber
+                        });
+                      } catch (ticketError) {
+                        console.error(`[Bot] Erreur lors de la génération du ticket #${i+1}:`, ticketError);
+                      }
+                    }
+                    
+                    // Envoyer tous les tickets générés
+                    if (generatedTickets.length > 0) {
+                      await telegramBot.sendMessage(
+                        chatId,
+                        `✅ Tickets générés avec succès !
+
+` +
+                        `🎟️ Événement : ${session.event.name}
+` +
+                        `🔻 Catégorie : ${session.category.name}
+` +
+                        `💰 Montant total payé : ${session.totalPrice} GNF
+` +
+                        `📎 Référence : ${reference}
+
+` +
+                        `💬 Vos ${generatedTickets.length} ticket(s) vont être envoyés dans les messages suivants...`
+                      );
+                      
+                      // Envoyer les tickets individuellement
+                      for (const ticket of generatedTickets) {
+                        try {
+                          const ticketMessage = `🎟️ *BILLET D'ENTRÉE*
+
+` +
+                            `*Événement:* ${ticket.eventName}
+` +
+                            `*Catégorie:* ${ticket.category}
+` +
+                            `*Prix:* ${ticket.price} GNF
+` +
+                            `*Réf:* ${ticket.formattedId}
+` +
+                            `*Code QR:* ${ticket.qrCode}
+
+` +
+                            `_Ce billet est valide pour une entrée. Présentez-le à l'entrée de l'événement._`;
+                          
+                          await telegramBot.sendMessage(chatId, ticketMessage, { parse_mode: 'Markdown' });
+                          console.log(`[Bot] Ticket #${ticket.ticketNumber} envoyé`);
+                          
+                          // Petite pause entre l'envoi de chaque ticket
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                        } catch (sendError) {
+                          console.error(`[Bot] Erreur lors de l'envoi du ticket:`, sendError);
+                        }
+                      }
+                      
+                      // Message final
+                      await telegramBot.sendMessage(
+                        chatId,
+                        `✨ Tous vos tickets ont été envoyés avec succès !
+
+` +
+                        `🔔 N'oubliez pas de les présenter lors de l'événement.
+` +
+                        `💾 Vos tickets sont également enregistrés dans notre système.
+
+` +
+                        `💵 Merci pour votre achat !`
+                      );
+                    } else {
+                      await telegramBot.sendMessage(chatId, `⚠️ Aucun ticket n'a pu être généré. Veuillez contacter le support.`);
+                    }
+                  }
+                } catch (error) {
+                  console.error('[Bot] Erreur lors de la génération/envoi automatique des tickets:', error);
+                  await telegramBot.sendMessage(chatId, `Une erreur est survenue lors de la génération automatique des tickets. Veuillez vérifier manuellement avec la commande /tickets`);
+                }
+              }
             }
 
             // Arrêter les vérifications après le nombre maximum de tentatives
