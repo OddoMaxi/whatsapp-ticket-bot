@@ -192,9 +192,9 @@ telegramBot.onText(/\/mestickets/, async (msg) => {
     // Récupérer les réservations de l'utilisateur (via l'ID Telegram ou le username)
     const reservations = db.prepare(`
       SELECT * FROM reservations 
-      WHERE (purchase_channel = 'telegram' AND phone = ?) 
-      ORDER BY created_at DESC
-    `).all(username);
+      WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
+      ORDER BY date DESC
+    `).all(username, userId.toString());
     
     if (!reservations || reservations.length === 0) {
       return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
