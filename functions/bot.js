@@ -816,7 +816,17 @@ telegramBot.on('callback_query', async (callbackQuery) => {
 ` +
                             `_Ce billet est valide pour une entrée. Présentez-le à l'entrée de l'événement._`;
                           
-                          await telegramBot.sendMessage(chatId, ticketMessage, { parse_mode: 'Markdown' });
+                          const generateAndSendTicket = require('./index').generateAndSendTicket;
+await generateAndSendTicket({
+  to: chatId,
+  channel: 'telegram',
+  eventName: ticket.eventName,
+  category: ticket.category,
+  reservationId: ticket.reservationId || ticket.id,
+  price: ticket.price,
+  formattedId: ticket.formattedId,
+  qrCode: ticket.qrCode
+});
                           console.log(`[Bot] Ticket #${ticket.ticketNumber} envoyé`);
                           
                           // Petite pause entre l'envoi de chaque ticket
