@@ -7,9 +7,11 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const crypto = require('crypto');
 const { formatReservationId } = require('../formatReservationId');
+const { generateTicketImage } = require('../ticket-generator'); // Import du générateur de tickets
 const router = express.Router();
 const db = new Database(path.join(__dirname, '../data.sqlite'));
 const axios = require('axios'); // Ajout d'axios pour les requêtes HTTP
+const fs = require('fs');
 
 // Middleware pour vérifier l'authentification
 const checkAuth = (req, res, next) => {
@@ -1192,4 +1194,78 @@ router.get('/api/generate-ticket-image/:reservationId', async (req, res) => {
 });
 
 // Exporter le routeur pour l'utiliser dans l'application principale
+// API pour générer et servir une image de ticket
+router.get('/api/ticket-image/:reservationId', async (req, res) => {
+  try {
+    const { reservationId } = req.params;
+    
+    // Récupérer les informations de la réservation
+    const reservation = db.prepare(`
+      SELECT r.*, e.name as event_name 
+      FROM reservations r
+      LEFT JOIN events e ON r.event_id = e.id
+      WHERE r.id = ? OR r.formatted_id = ?
+    `).get(reservationId, reservationId);
+    
+    if (!reservation) {
+      console.log('Réservation non trouvée:', reservationId);
+      return res.status(404).json({ error: 'Réservation non trouvée' });
+    }
+    
+    // Vérifier s'il s'agit d'un ticket additionnel
+    let formattedId = reservation.formatted_id;
+    let qrCode = reservation.qr_code;
+    
+    // Si c'est un ID de ticket supplémentaire (format ID-#)
+    if (String(reservationId).includes('-')) {
+      const [mainId, ticketNumber] = String(reservationId).split('-');
+      
+      // Vérifier si c'est un ticket additionnel dans la table dédiée
+      const additionalTicket = db.prepare(`
+        SELECT * FROM additional_tickets 
+        WHERE reservation_id = ? AND ticket_number = ?
+      `).get(mainId, ticketNumber);
+      
+      if (additionalTicket) {
+        formattedId = additionalTicket.formatted_id;
+        qrCode = additionalTicket.qr_code;
+      }
+    }
+    
+    // Générer l'image du ticket
+    const ticketImage = await generateTicketImage({
+      eventName: reservation.event_name,
+      category: reservation.category_name,
+      price: reservation.unit_price,
+      formattedId: formattedId || reservation.formatted_id || reservation.id,
+      qrCode: qrCode || formattedId || reservation.formatted_id || reservation.id
+    });
+    
+    // Sauvegarder l'image temporairement
+    const ticketId = qrCode || formattedId || reservation.id;
+    const filePath = `/tmp/web_ticket_${ticketId}.png`;
+    fs.writeFileSync(filePath, ticketImage);
+    
+    // Envoyer l'image au client
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Disposition', `inline; filename="ticket_${ticketId}.png"`);
+    res.send(ticketImage);
+    
+  } catch (error) {
+    console.error('Erreur lors de la génération de l\'image du ticket:', error);
+    res.status(500).json({ error: 'Erreur lors de la génération de l\'image du ticket' });
+  }
+});
+
+// Route pour servir les tickets web (similaire à celle pour WhatsApp/Telegram)
+router.get('/ticket-web/:id.png', (req, res) => {
+  const filePath = `/tmp/web_ticket_${req.params.id}.png`;
+  res.sendFile(filePath, { root: '/' }, err => {
+    if (err) {
+      console.error('Erreur lors de l\'envoi du fichier:', err);
+      res.status(404).send('Ticket introuvable');
+    }
+  });
+});
+
 module.exports = router;
