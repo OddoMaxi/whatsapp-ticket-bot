@@ -168,30 +168,51 @@ telegramBot.onText(/\/acheter/, async (msg) => {
 });
 
 // Commande /mestickets - Affiche les tickets de l'utilisateur
+const tgShowUserOrders = async (chatId, userId, username) => {
+  const Database = require('better-sqlite3');
+  const db = new Database(__dirname + '/data.sqlite');
+  const reservations = db.prepare(`
+    SELECT * FROM reservations 
+    WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
+    ORDER BY date DESC
+  `).all(username, userId.toString());
+  if (!reservations || reservations.length === 0) {
+    if (paymentSessions.has(userId)) paymentSessions.delete(userId);
+    return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
+  }
+  // Grouper par commande
+  const orders = {};
+  reservations.forEach(res => {
+    if (!orders[res.order_reference]) orders[res.order_reference] = [];
+    orders[res.order_reference].push(res);
+  });
+  let message = '🎟️ *Vos commandes de tickets* :\n\n';
+  const keyboard = { inline_keyboard: [] };
+  let orderNum = 1;
+  for (const orderRef in orders) {
+    const tickets = orders[orderRef];
+    const eventName = tickets[0].event_name;
+    const catName = tickets[0].category_name;
+    const date = new Date(tickets[0].date).toLocaleDateString('fr-FR');
+    message += `*Commande ${orderNum}* - ${date}\n`;
+    message += `🎭 Événement: *${eventName}*\n`;
+    message += `🎟️ Catégorie: ${catName}\n`;
+    message += `🔢 Nombre de tickets: ${tickets.length}\n`;
+    message += `🆔 Référence: ${orderRef}\n\n`;
+    keyboard.inline_keyboard.push([
+      { text: `Voir les tickets de la commande ${orderNum}`, callback_data: `view_order:${orderNum}` }
+    ]);
+    orderNum++;
+  }
+  telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: keyboard });
+};
+
 telegramBot.onText(/\/mestickets/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
   const username = msg.from.username || '';
-  
-  try {
-    const Database = require('better-sqlite3');
-    const db = new Database(__dirname + '/data.sqlite');
-    
-    // Récupérer les réservations de l'utilisateur (via l'ID Telegram ou le username)
-    const reservations = db.prepare(`
-      SELECT * FROM reservations 
-      WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
-      ORDER BY date DESC
-    `).all(username, userId.toString()); // OK, déjà corrigé ici
-    
-    if (!reservations || reservations.length === 0) {
-      // Nettoyer la session de paiement si elle existe (évite les blocages)
-      if (paymentSessions.has(userId)) paymentSessions.delete(userId);
-      return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
-    }
-    
-    // Grouper les réservations par commande (order_reference)
-    const orders = {};
+  tgShowUserOrders(chatId, userId, username);
+});
     reservations.forEach(res => {
       if (!orders[res.order_reference]) orders[res.order_reference] = [];
       orders[res.order_reference].push(res);
@@ -369,6 +390,48 @@ telegramBot.on('callback_query', async (callbackQuery) => {
   const msg = callbackQuery.message;
   const chatId = msg.chat.id;
   const userId = callbackQuery.from.id;
+  const username = callbackQuery.from.username || '';
+  // ...
+  if (data === 'my_tickets') {
+    tgShowUserOrders(chatId, userId, username);
+    return;
+  }
+  if (data.startsWith('view_order:')) {
+    // Afficher tous les tickets de la commande sélectionnée
+    const orderIndex = parseInt(data.split(':')[1], 10) - 1;
+    const Database = require('better-sqlite3');
+    const db = new Database(__dirname + '/data.sqlite');
+    const reservations = db.prepare(`
+      SELECT * FROM reservations 
+      WHERE purchase_channel = 'telegram' AND (phone = ? OR user = ?)
+      ORDER BY date DESC
+    `).all(username, userId.toString());
+    // Regrouper par commande
+    const orders = [];
+    const byOrder = {};
+    reservations.forEach(res => {
+      if (!byOrder[res.order_reference]) {
+        byOrder[res.order_reference] = [];
+        orders.push(byOrder[res.order_reference]);
+      }
+      byOrder[res.order_reference].push(res);
+    });
+    if (orderIndex < 0 || orderIndex >= orders.length) {
+      return telegramBot.sendMessage(chatId, 'Commande introuvable.');
+    }
+    const selectedOrder = orders[orderIndex];
+    let message = `🎟️ *Tickets de la commande*\n\n`;
+    selectedOrder.forEach((ticket, idx) => {
+      message += `*Ticket ${idx + 1}*\n`;
+      message += `🎭 Événement: *${ticket.event_name}*\n`;
+      message += `🎟️ Catégorie: ${ticket.category_name}\n`;
+      message += `💰 Prix: ${ticket.unit_price} GNF\n`;
+      message += `🆔 Référence: ${ticket.formatted_id}\n`;
+      message += `🔗 QR: ${ticket.qr_code}\n\n`;
+    });
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    return;
+  }
   
   // DEBUG: Afficher les données du callback
   console.log('=== TELEGRAM CALLBACK DEBUG ===');
@@ -1259,9 +1322,9 @@ await generateAndSendTicket({
               `🔔 Chaque ticket a un code QR unique pour l'accès`,
               { reply_markup: keyboard }
             );
+            // Nettoyer la session après génération et envoi des tickets
+            setTimeout(() => paymentSessions.delete(userId), 500);
 
-            // Nettoyer la session après génération des tickets ET décrémentation
-            paymentSessions.delete(userId);
           } else {
             // Si on arrive ici, on n'a pas généré de tickets car le paiement n'est pas validé
             console.log('DEBUG: Pas de génération de tickets - paiement non validé', { session });
