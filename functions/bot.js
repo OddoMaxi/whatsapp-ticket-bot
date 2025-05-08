@@ -108,17 +108,7 @@ telegramBot.onText(/\/aide/, (msg) => {
       [{ text: '🏠 Retour au menu', callback_data: 'main_menu' }]
     ]
   };
-  telegramBot.sendMessage(chatId, `Voici comment utiliser le service d'achat de tickets :
-
-Pour acheter un ticket :
-1. Sélectionnez un événement
-2. Choisissez une catégorie de ticket
-3. Sélectionnez la quantité
-4. Procédez au paiement via ChapChap Pay
-5. Vérifiez le statut du paiement
-6. Recevez vos tickets !
-
-Choisissez une option ci-dessous:`, { reply_markup: keyboard });
+  telegramBot.sendMessage(chatId, `Pour acheter un ticket, cliquez sur "Acheter des tickets" puis laissez-vous guider par les boutons du menu.\n\nPour consulter vos tickets, cliquez sur "Mes tickets".`, { reply_markup: keyboard });
 });
 
 // Commande /acheter - Démarre le processus d'achat de tickets
@@ -200,19 +190,33 @@ telegramBot.onText(/\/mestickets/, async (msg) => {
       return telegramBot.sendMessage(chatId, 'Vous n\'avez pas encore acheté de tickets.');
     }
     
-    // Envoyer un message avec la liste des tickets
-    let message = '🎟️ *Vos tickets achetés* :\n\n';
-    
-    reservations.forEach((reservation, index) => {
-      message += `*${index + 1}.* ${reservation.event_name} - ${reservation.category_name}\n`;
-      message += `   Quantité: ${reservation.quantity}\n`;
-      message += `   Prix: ${reservation.total_price} GNF\n`;
-      message += `   Référence: ${reservation.formatted_id}\n\n`;
+    // Grouper les réservations par commande (order_reference)
+    const orders = {};
+    reservations.forEach(res => {
+      if (!orders[res.order_reference]) orders[res.order_reference] = [];
+      orders[res.order_reference].push(res);
     });
-    
-    message += 'Pour voir le détail d\'un ticket, utilisez le bouton "Mes tickets" du menu.';
-    
-    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+
+    let message = '🎟️ *Vos commandes de tickets* :\n\n';
+    const keyboard = { inline_keyboard: [] };
+    let orderNum = 1;
+    for (const orderRef in orders) {
+      const tickets = orders[orderRef];
+      const eventName = tickets[0].event_name;
+      const catName = tickets[0].category_name;
+      const date = new Date(tickets[0].date).toLocaleDateString('fr-FR');
+      message += `*Commande ${orderNum}* - ${date}\n`;
+      message += `🎭 Événement: *${eventName}*\n`;
+      message += `🎟️ Catégorie: ${catName}\n`;
+      message += `🔢 Nombre de tickets: ${tickets.length}\n`;
+      message += `🆔 Référence: ${orderRef}\n\n`;
+      keyboard.inline_keyboard.push([
+        { text: `Voir les tickets de la commande ${orderNum}`, callback_data: `view_order:${orderNum}` }
+      ]);
+      orderNum++;
+    }
+    if (orderNum === 1) message += 'Aucune commande trouvée.';
+    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: keyboard });
     
   } catch (error) {
     console.error('Erreur lors de la récupération des tickets :', error);
@@ -1256,7 +1260,7 @@ await generateAndSendTicket({
               { reply_markup: keyboard }
             );
 
-            // Nettoyer la session après génération des tickets
+            // Nettoyer la session après génération des tickets ET décrémentation
             paymentSessions.delete(userId);
           } else {
             // Si on arrive ici, on n'a pas généré de tickets car le paiement n'est pas validé
