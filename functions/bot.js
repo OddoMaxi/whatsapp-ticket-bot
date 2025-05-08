@@ -213,37 +213,6 @@ telegramBot.onText(/\/mestickets/, async (msg) => {
   const username = msg.from.username || '';
   tgShowUserOrders(chatId, userId, username);
 });
-    reservations.forEach(res => {
-      if (!orders[res.order_reference]) orders[res.order_reference] = [];
-      orders[res.order_reference].push(res);
-    });
-
-    let message = '🎟️ *Vos commandes de tickets* :\n\n';
-    const keyboard = { inline_keyboard: [] };
-    let orderNum = 1;
-    for (const orderRef in orders) {
-      const tickets = orders[orderRef];
-      const eventName = tickets[0].event_name;
-      const catName = tickets[0].category_name;
-      const date = new Date(tickets[0].date).toLocaleDateString('fr-FR');
-      message += `*Commande ${orderNum}* - ${date}\n`;
-      message += `🎭 Événement: *${eventName}*\n`;
-      message += `🎟️ Catégorie: ${catName}\n`;
-      message += `🔢 Nombre de tickets: ${tickets.length}\n`;
-      message += `🆔 Référence: ${orderRef}\n\n`;
-      keyboard.inline_keyboard.push([
-        { text: `Voir les tickets de la commande ${orderNum}`, callback_data: `view_order:${orderNum}` }
-      ]);
-      orderNum++;
-    }
-    if (orderNum === 1) message += 'Aucune commande trouvée.';
-    telegramBot.sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: keyboard });
-    
-  } catch (error) {
-    console.error('Erreur lors de la récupération des tickets :', error);
-    telegramBot.sendMessage(chatId, 'Une erreur est survenue. Veuillez réessayer plus tard.');
-  }
-});
 
 // Commande /ticket - Affiche un ticket spécifique
 telegramBot.onText(/\/ticket ([0-9]+)/, async (msg, match) => {
